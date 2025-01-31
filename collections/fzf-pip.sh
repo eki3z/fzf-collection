@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 _pipf() {
-  pip --disable-pip-version-check --no-python-version-warning "$@"
+  pip --disable-pip-version-check "$@"
 }
 
 _pipf_list_installed() {
