@@ -1,0 +1,79 @@
+--- [Header Text] (len=11) ---
+Header Text
+▔▔▔▔▔▔▔▔▔▔▔
+--- [abc] (len=3) ---
+abc
+▔▔▔
+--- [Find Path] (len=9) ---
+Find Path
+▔▔▔▔▔▔▔▔▔
+--- [Env] (len=3) ---
+Env
+▔▔▔
+--- [Npm Outdated] (len=12) ---
+Npm Outdated
+▔▔▔▔▔▔▔▔▔▔▔▔
+
+===== format=manage =====
+lodash  [34m4.17.21 some description here[0m
+react   [34m18.2.0 desc[0m
+
+===== format=pinned =====
+lodash  [34m4.17.21 some description here[0m
+react   [34m18.2.0 desc[0m
+
+===== format=outdated =====
+lodash  [34m4.17.21[0m  =>  [33msome descriptio[0m
+react   [34m18.2.0[0m   =>  [33mdesc[0m
+
+===== format=general =====
+lodash  [34m4.17.21 some description here[0m
+react   [34m18.2.0 desc[0m
+
+===== format=bogus =====
+Error: No such format: bogus
+
+===== 单条 =====
+beta
+
+===== 多词条目被截断（缺陷 B1 的证据） =====
+my
+
+===== 退出码：匹配时 =====
+  退出码=0
+
+===== 退出码：无匹配（缺陷 B11 —— fzf 的 1 被 perl 吞掉） =====
+  _fzf_read 退出码=0   ← 恒为 0，调用方无法检测取消
+  对照 fzf 裸调用退出码=1
+
+===== 有 pkg =====
+
+[34mmypkg[0m: some message
+
+===== 无 pkg（回退到 caller） =====
+
+[34mMYFUNC[0m: another message
+
+===== 在 zpf_manage 上下文中 =====
+  [Zpf Manage]
+
+===== 在 zpf_outdated 上下文中 =====
+  [Zpf Outdated]
+
+===== 取首字段（参数展开，可移植） =====
+  first=[lodash]
+
+===== 定长变量切分（可移植，字段数固定时用） =====
+  x=[lodash] y=[4.17.21] z=[1.2M]
+
+===== while + 参数展开切分（可移植，字段数不定时用） =====
+  field=[lodash]
+  field=[4.17.21]
+  field=[1.2M]
+
+===== for f in $(echo ...) =====
+  f=[alpha]
+  f=[beta]
+  f=[gamma]
+
+### END
