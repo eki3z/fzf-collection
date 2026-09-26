@@ -4,11 +4,21 @@
 # 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
 # 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
 
-# gem info 的缩进输出用 perl 取字段。`gem info <name>` 的输出形如
-#   Homepage: https://...
-#   -v 是 perl 的开关（-v 设置 $f），-n 逐行、-l 打印时去掉行首空白
+# 从 `gem info <name>` 的缩进输出里取一个字段。输出形如
+#   bigdecimal (1.4.1)
+#       Authors: Kenta Murata, ...
+#       Homepage: https://...
+# 整行含 "<字段>: " 才命中，取冒号后的内容；冒号后若还有多余空格要剥掉
+# （旧版靠 perl 的 -s 顺手做了这件事）。
 _gemf_extract() {
-  gem info "$1" --exact --prerelease 2>/dev/null | perl -slne '/\Q$f\E: (.+)$/ && print "$1"' -- -f="$2"
+  local line
+  gem info "$1" --exact --prerelease 2>/dev/null | while IFS= read -r line; do
+    [[ $line == *"$2: "* ]] || continue
+    line=${line#*"$2: "}
+    while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
+    print -r -- "$line"
+    break
+  done
 }
 
 # ---- 列表查询：输出 name<TAB>rest ----
@@ -46,17 +56,29 @@ _gemf_list_available() {
 
 # ---- 版本相关：显式收参 ----
 
-# 所有版本（含未安装的），每行一个
+# 所有版本（含未安装的），每行一个。
+# `gem search X --all --remote --exact` 每行是
+#   json (3.0.2 ruby java, 3.0.1 ruby java, ...)，取括号里那段再按 `, ` 拆行。
 _gemf_version_list() {
-  gem search "$1" --all --remote --exact 2>/dev/null \
-    | perl -lne '/\((.*)\)$/m && print $1' \
-    | perl -pe 's/, /\n/g'
+  local line s
+  gem search "$1" --all --remote --exact 2>/dev/null | while IFS= read -r line; do
+    [[ $line == *'('*')' ]] || continue
+    s=${line##*\(}
+    s=${s%\)}
+    # 换行走变量：${s//, /$'\n'} 里的 $'\n' 不会被求值
+    print -r -- "${s//, /$_G_NL}"
+  done
 }
 
-# 已安装的最新版本（取括号里的第一个）
+# 已安装的最新版本：取 `name (v1, v2)` 括号里逗号（或右括号）之前的部分
 _gemf_version_current() {
-  gem info "$1" --exact --prerelease \
-    | perl -lne '/^.+ \(([^,]+).*\)$/ && print "$1"'
+  local line s
+  gem info "$1" --exact --prerelease 2>/dev/null | while IFS= read -r line; do
+    [[ $line == *'('*')' ]] || continue
+    s=${line##*\(}
+    print -r -- "${s%%[,)]*}"
+    break
+  done
 }
 
 # $1=pkg $2=目标版本 $3=回滚前的版本。
@@ -99,9 +121,11 @@ _gemf_act() {
 # 也不会把 PKG 变成普通数组（下标里的 ':' 会被当成算术求值）。
 [[ ${(t)PKG} == association ]] || typeset -gA PKG
 
-# 列表函数在 while 循环里用到的分隔符。必须先声明：循环体内的 local 会让
-# zsh 5.9 往 stdout 打一行变量赋值，混进喂给 fzf 的候选列表。
+# 换行符。${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
+# 会原样输出这四个字符，所以只能走变量。必须在文件顶层声明 ——
+# 循环体内的标量 local 会往 stdout 打一行赋值，混进候选列表。
 typeset -g _G_TAB=$'\t'
+typeset -g _G_NL=$'\n'
 
 PKG+=(
   'gem:title'   'Gem'

@@ -55,15 +55,27 @@ perms_gate() {
   return $rc
 }
 
-# 静态 lint：变量卫生。两条都在 zsh 里静默出错，zsh -n 都查不出。
+# 静态 lint：变量卫生。三条都在 zsh 里静默出错，zsh -n 都查不出，
+# 而且都会把内容打到 stdout —— body 里几乎所有函数的 stdout 都会被
+# $(...) 或管道捕获，那一行就会变成一条假候选。
 #
 # 1) 禁止把标量 local 写在循环体内。
 #    zsh 5.9 在循环体内执行标量 local 时，会往 stdout 打一行
-#    `NAME=<上一轮的值>`（含 ESC 的值显示成 $'\C-...'）。body 里几乎所有
-#    函数的 stdout 都会被 $(...) 或管道捕获，那一行就会变成一条假数据 ——
-#    曾经表现为 pnpmf 的候选列表里混入 k=6 / k=''。
+#    `NAME=<上一轮的值>`（含 ESC 的值显示成 $'\C-...'）。
 #    为什么不可省：在循环里写 local 是很自然、很常见的写法，
 #    而症状要等用户在 fzf 列表里看到多出一行才暴露。
+#
+# 2) 禁止在 local / typeset 的声明里带命令替换。
+#    `local x=$(cmd)` 返回的是 local 内建自己的状态，命令替换的退出码被吞掉：
+#      local x=$(false)  -> 之后 $? 是 0
+#      local x; x=$(false) -> 之后 $? 是 1
+#    于是 `local v=$(pkg_install "$1") || return 1` 这种写法里的 || 永远不触发。
+#
+# 3) 禁止重复声明同一个标量 local（不带赋值）。
+#    zsh 5.9 同样会往 stdout 打一行 `NAME=<当前值>`。带赋值（local x=v）、
+#    数组（local -a x）、整数（local -i x）都不触发。
+#    实测：local a / local a=world / local -a arr / local -i num 四种里
+#    只有「重复且无赋值的标量」会打印。
 #
 # 2) 禁止在 local / typeset 的声明里带命令替换。
 #    `local x=$(cmd)` 返回的是 local 内建自己的状态，命令替换的退出码被吞掉：
@@ -73,9 +85,14 @@ perms_gate() {
 hygiene_gate() {
   print -r -- "--- lint: 变量卫生 ---"
   local f rc=0 n
-  for f in "$root"/base.zsh "$root"/collections/*.zsh; do
+  # cases.sh 也要扫：测试自己的 stdout 就是要跟基线逐字比的内容，
+  # 一行 `line='...'` 混进去就变成基线的一部分，以后再也发现不了。
+  for f in "$root"/base.zsh "$root"/collections/*.zsh "$root"/tests/cases.sh; do
     n=$(awk '
       function report(msg) { printf("  FAIL %s:%d  %s\n", FILENAME, FNR, msg) }
+      # 每个函数一份 local 名单。函数开括号处清空 —— 不能等到闭合才清，
+      # 否则 line / f / n 这类常用名会在不同函数之间互相误报。
+      function forget() { delete seen }
       { line = $0; sub(/\r$/, "", line)
         if (line ~ /^[ \t]*#/ || line ~ /^[ \t]*$/) next
         work = line; gsub(/\t/, "        ", work)
@@ -84,22 +101,31 @@ hygiene_gate() {
 
         # ---- 2) 声明里带命令替换 ----
         if (s ~ /^(local|typeset|declare)([ \t]|$)/ &&
-            s ~ /=[ \t]*["\x27]?\$\(/ && s !~ /^[ \t]*#/) {
+            s ~ /=[ \t]*["\x27]?\$\(/) {
           report("声明里带命令替换，退出码会被 local 吞掉 -> " s)
         }
 
-        # ---- 1) 循环体内的标量 local ----
+        # ---- 1) 循环体内的标量 local / 3) 重复的标量 local ----
         if (s ~ /^(local|typeset)[ \t]+/) {
           rest = s; sub(/^(local|typeset)[ \t]+/, "", rest)
           isarr = (rest ~ /(^|[ \t])-[aA]([ \t]|$)/)
-          hasname = 0
-          nt = split(rest, tok, /[ \t]+/)
-          for (i = 1; i <= nt; i++) if (tok[i] != "" && tok[i] !~ /^-/) hasname = 1
+          isint = (rest ~ /(^|[ \t])-[iI]([ \t]|$)/)
           inloop = 0
           for (i = top; i >= 1; i--)
             if (kind[i] == "loop" && lind[i] < ind) { inloop = 1; break }
-          if (inloop && !isarr && hasname)
-            printf("  FAIL %s:%d  %s\n", FILENAME, FNR, s)
+          nt = split(rest, tok, /[ \t]+/)
+          for (i = 1; i <= nt; i++) {
+            if (tok[i] == "" || tok[i] ~ /^-/) continue
+            nm = tok[i]
+            hasval = (nm ~ /=/)
+            sub(/=.*/, "", nm)
+            if (nm !~ /^[A-Za-z_][A-Za-z0-9_]*$/) continue
+            if (inloop && !isarr && !isint)
+              report("循环体内的标量 local 会把 NAME=值 打进 stdout -> " s)
+            if (!isarr && !isint && !hasval && (nm in seen))
+              report("重复声明已 local 的标量（无赋值）会把 NAME=值 打进 stdout -> " s)
+            if (!(nm in seen)) seen[nm] = 1
+          }
         }
 
         if (s ~ /^done([ \t]*;)?$/) { if (top >= 1 && kind[top] == "loop") top--; next }
@@ -107,15 +133,18 @@ hygiene_gate() {
         if (s ~ /^(for|while|until|select|repeat)([ \t]|$)/ || s ~ /^do$/) {
           top++; kind[top] = "loop"; lind[top] = ind; next
         }
-        if (s ~ /^[A-Za-z_][A-Za-z0-9_.:-]*[ \t]*\([ \t]*\)[ \t]*\{?$/) {
-          top++; kind[top] = "func"; lind[top] = ind; next
+        # 函数起点。必须容许 { 后跟行尾注释 —— 本仓库的函数几乎都这么写
+        # （`_pkg_rollback() {          # $1=eco $2=pkg`）。漏认会让
+        # local 名单跨函数累积，line / f / n 这类常用名互相误报。
+        if (s ~ /^[A-Za-z_][A-Za-z0-9_.:-]*[ \t]*\([ \t]*\)[ \t]*\{([ \t]*#.*)?$/) {
+          top++; kind[top] = "func"; lind[top] = ind; forget(); next
         }
       }
     ' "$f")
     if [[ -n $n ]]; then
       print -r -- "$n"
-      print -r -- "       ^ 循环体内的 local 会把 NAME=值 打进 stdout；"
-      print -r -- "         声明里的 \$(cmd) 会让 || 永远不触发"
+      print -r -- "       ^ 这三种写法都会静默往 stdout 打一行 NAME=值："
+      print -r -- "         循环体内的标量 local / 重复的无赋值标量 local / 声明里的 \$(cmd)"
       rc=1
     else
       print -r -- "  OK   ${f:t}"

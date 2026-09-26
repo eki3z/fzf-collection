@@ -32,9 +32,16 @@ _npmf_version_list() {
   npm info "$1" versions --json 2>/dev/null | jq -r 'reverse | .[]' 2>/dev/null
 }
 
+# `npm list --depth 0` 每行是 `pkg@version`，取自己那个 pkg 的版本。
+# 原来用 perl 的 \Q$pkg\E@ 锚定；zsh 里用同样的字面匹配，
+# 整行含 $pkg@ 才会命中，所以别的包的行不会被误取。
 _npmf_version_current() {
-  _npmf list --depth 0 2>/dev/null \
-    | perl -slne '/\Q$f\E@(.+)$/ && print "$1"' -- -f="$1"
+  local line
+  _npmf list --depth 0 2>/dev/null | while IFS= read -r line; do
+    [[ $line == *"$1@"* ]] || continue
+    print -r -- "${line#*"$1"@}"
+    break
+  done
 }
 
 _npmf_version_install() {

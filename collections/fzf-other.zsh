@@ -4,21 +4,49 @@
 # 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
 # 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
 
+# 这三个命令（fp / ffp / envf）不是包管理器，没有 view 与 action 的概念，
+# 所以不进注册表，各自带一个 header 变量。
+
+# fp 与 envf 的 fzf 调用显式带 --ansi。_fzf_opts 里默认也有（见
+# fzf-collection.plugin.zsh 的 FZF_COLLECTION_OPTS 默认值），但那是用户可覆盖的
+# 变量 —— 一旦有人设 FZF_COLLECTION_OPTS 时漏掉 --ansi，_fzf_format 加的颜色
+# 就会被 fzf 当普通文本：不上色，还把 \e[34m 的 5+4 个字节算进显示宽度，
+# 于是长行被提前截断。候选由本文件上色的调用点自己声明这个依赖。
+#
+# 注意：这与 fzf 在 Kitty 键盘协议下把按键序列当文本插入查询框是两回事，
+# 那个问题 fzf 至今未修（junegunn/fzf#3208），与本插件无关。
+
+# 取首个字段之后的全部内容：剥掉对齐填充与颜色码。
+#
+# 原来是 `perl -lane 'printf "%s = %s", $F[0], $F[$#F]'`，$F[$#F] 是最后一个
+# 空白分隔字段，所以值里带空格时会截断 —— 例如 PATH 里有
+# "/Applications/VMware Fusion.app/Contents/Public"，结果只剩 "Fusion.app/..."。
+# 这里改成「首个字段之后全都要」，把值完整带出来。
+#
+# 颜色码：fzf 带 --ansi 时输出已经剥掉了颜色，所以这两句只是兜底。
+# 模式写成 "$var"（带引号）才是字面量 —— \e[0m 里的 [ 不加引号会被当成
+# bracket expression。试过 ${var//$'\e'\[[0-9;]#m/} 那种「剥掉全部 CSI 序列」
+# 的写法，在 zsh 里匹配不上，所以只掐固定的首尾两段。
+_fzf_tail() {             # $1=行
+  local t=${1#"${1%%[[:space:]]*}"}
+  while [[ $t == [[:space:]]* ]]; do t=${t#?}; done
+  [[ $t == "$_FZF_BLUE"* ]] && t=${t#"$_FZF_BLUE"}
+  [[ $t == *"$_FZF_RESET" ]] && t=${t%"$_FZF_RESET"}
+  print -r -- "$t"
+}
+
 # [F]ind [P]ath
 # option -d return executable path
 
 fp() {
-  local header format rule
+  local header format line dir
+  local i
   header="Find Path"
   format="general"
 
-  if [[ "$1" == "-d" ]]; then
-    rule='printf "%s/", glob($F[$#F])'
-  else
-    rule='printf "%s/%s", glob($F[$#F]), $F[0]'
-  fi
-
-  for i in $(echo ${PATH//:/ }); do
+  # 原来写的是 for i in $(echo ${PATH//:/ }) —— 一次 echo fork，
+  # 而且靠命令替换的空白分词，路径里有空格就断了。${(s.:.)PATH} 直接切。
+  for i in "${(@s.:.)PATH}"; do
     if [ -d "$i" ]; then
       # option -H to allow symbolic root_path to parse normally
       # SEE https://www.gnu.org/software/findutils/manual/html_node/find_html/Symbolic-Links.html
@@ -27,8 +55,23 @@ fp() {
   done \
     | _fzf_format \
     | uniq \
-    | fzf "${_fzf_opts[@]}" --header "$(_fzf_underline "$header")" --tiebreak=index \
-    | perl -lane "$rule"
+    | fzf "${_fzf_opts[@]}" --ansi --header "$(_fzf_underline "$header")" --tiebreak=index \
+    | while IFS= read -r line; do
+        # 原来这里是 `| perl -lane "$rule"`，$rule 为
+        #   printf "%s/%s", glob($F[$#F]), $F[0]   （或 -d 时 printf "%s/", glob(...)）
+        # glob() 对普通路径是恒等，但会把开头的 ~ 展开成 $HOME ——
+        # find 那步把 $HOME 换成了 ~，所以 PATH 里含 ~/bin 时这是真实场景，要保留。
+        #
+        # 这个 while 必须接在管道里。写成独立语句的话它读的是函数自己的
+        # stdin，不是 fzf 的输出。
+        dir=$(_fzf_tail "$line")
+        [[ $dir == '~'* ]] && dir=$HOME${dir#\~}
+        if [[ "$1" == "-d" ]]; then
+          print -r -- "$dir/"
+        else
+          print -r -- "$dir/${line%%[[:space:]]*}"
+        fi
+      done
 }
 
 # [F]ind [FP]ath
@@ -36,11 +79,8 @@ fp() {
 ffp() {
   local loc header
   header="Find Fpath"
-  loc=$(
-    echo "$FPATH" \
-      | perl -pe 's/:/\n/g' \
-      | _fzf_read
-  )
+  # 原来靠 `perl -pe 's/://\n/g'` 把 FPATH 拆行
+  loc=$(print -l -- "${(@s.:.)FPATH}" | _fzf_read)
 
   if [ -d "$loc" ]; then
     header="Find Fpath => ${loc}"
@@ -54,16 +94,29 @@ ffp() {
 }
 
 # [E]nv
+
 envf() {
-  local header format rule
+  # key / val 在下面的 while 循环里用；都在函数开头声明，
+  # 循环体内的标量 local 会污染 stdout（zsh 5.9）。
+  local header format rec line key val
   header="Env"
   format="general"
-  # NOTE use null as separator then replace \n and first = to space to avoid conflicts.
-  printenv --null \
-    | perl -pe 's/\n+/ /g;s/\x00/\n/g' \
-    | perl -pe 's/^(\S+?)=/$1 /' \
+  # 用 NUL 分隔读，值里含换行时才不会被拆成两条记录。
+  # zsh 的 read -d 能吃 NUL（read -r -d $'\0'），所以不需要 tr 或 perl。
+  # 读进来后：换行压成空格（与旧实现一致），第一个 = 换成空格。
+  while IFS= read -r -d $'\0' rec; do
+    rec=${rec//$'\n'/ }
+    [[ $rec == *=* ]] || continue
+    print -r -- "${rec%%=*} ${rec#*=}"
+  done < <(printenv --null) \
     | sort -u \
     | _fzf_format \
-    | fzf "${_fzf_opts[@]}" --header "$(_fzf_underline "$header")" \
-    | perl -lane 'printf "%s = %s", $F[0], $F[$#F]'
+    | fzf "${_fzf_opts[@]}" --ansi --header "$(_fzf_underline "$header")" \
+    | while IFS= read -r line; do
+        # 原来是 `perl -lane 'printf "%s = %s", $F[0], $F[$#F]'`。
+        # $F[$#F] 是最后一个空白字段，值里带空格就截断 —— PATH 里有
+        # "/Applications/VMware Fusion.app/..." 时只剩 "Fusion.app/..."。
+        # _fzf_tail 取的是「首个字段之后的全部内容」，把值完整带出来。
+        print -r -- "${line%%[[:space:]]*} = $(_fzf_tail "$line")"
+      done
 }

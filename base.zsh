@@ -4,7 +4,11 @@
 # 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
 # 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
 
-_fzf_opts=($(echo "${FZF_COLLECTION_OPTS}"))
+# FZF_COLLECTION_OPTS 是一个字符串，要按空白切成数组再传给 fzf。
+# ${=var} 是 zsh 的强制分词 flag（默认不分词）。
+# 原来写的是 _fzf_opts=($(echo "$FZF_COLLECTION_OPTS}")) —— 结果相同，
+# 但为了分词而 fork 一次 echo，插件每次加载都白付这个代价。
+_fzf_opts=(${=FZF_COLLECTION_OPTS})
 
 _fzf_exist() {
   command -v "$@" &>/dev/null
@@ -37,9 +41,17 @@ _fzf_underline() {
   printf -- '▔%.0s' {1..$#1}
 }
 
+# 取每行的第一个空白分隔字段。原来是 `| perl -lane 'print $F[0]'` ——
+# perl 的 -a 按 /\s+/ 自动分词，且会丢掉分词产生的空首元素，
+# 所以前导空白不会让结果变成空串。zsh 侧必须先剥前导空白再切，
+# 直接 ${line%%[[:space:]]*} 会把「  有缩进」这种行切成空。
 _fzf_read() {
+  local line
   fzf "${_fzf_opts[@]}" --header "$(_fzf_underline "$header")" "$@" \
-    | perl -lane 'print $F[0]'
+    | while IFS= read -r line; do
+        while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
+        print -r -- "${line%%[[:space:]]*}"
+      done
   return $pipestatus[1]
 }
 
@@ -52,26 +64,131 @@ _fzf_homepage() {
   fi
 }
 
-# SEE https://stackoverflow.com/a/23777065/13194984
-_fzf_format() {
-  local input rule
+# 首字段原样，其余字段合并后染蓝，再按首字段宽度对齐。
+#
+# 原来这里有 manage / pinned / outdated / general 四个分支，每个分支一条 perl
+# printf 规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走
+# _pkg_display，format 只剩 general 还被 fp / envf 使用，另外三个分支无法到达，
+# 所以删掉了。现在没有任何 perl 也没有 column。
+#
+# general 的语义（对照过 column -t 的输出）：
+#   - 按空白切，首字段之外的整段（含中间的空格）合并成一个字段
+#   - 首字段补齐到本批最大宽度，间隔 2 个空格
+_fzf_format() {          # $format 由调用方设为 general
+  local line first rest
+  local -a lines out
+  if [[ $format != general ]]; then
+    print -r -- "Error: No such format: $format"
+    return 0
+  fi
+  # 末行没有换行时 read 返回非零但仍填了变量，所以要补一次判断
+  while IFS= read -r line || [[ -n $line ]]; do lines+=("$line"); done
+  # 输入里只有空行时什么都不输出。旧实现是 `input="$(cat)"` 再 `[ -n "$input" ]`，
+  # 命令替换会剥掉尾部换行，所以纯空行输入的 input 是空串。
+  local any=0
+  for line in "${lines[@]}"; do
+    [[ -n ${line//[[:space:]]/} ]] && { any=1; break; }
+  done
+  (( any )) || return 0
+  for line in "${lines[@]}"; do
+    while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
+    first=${line%%[[:space:]]*}
+    rest=${line#"$first"}
+    # 首字段之外的部分要按空白重新拼接：旧规则是 perl 的 join(" ", @F[1 .. $#F])，
+    # 它把字段间的制表符、连续空格一律压成单个空格。直接取原 remainder 会把
+    # 制表符原样带进显示里。
+    rest=${rest//[[:space:]]/ }
+    while [[ $rest == *"  "* ]]; do rest=${rest//  / }; done
+    while [[ $rest == ' '* ]]; do rest=${rest# }; done
+    while [[ $rest == *' ' ]]; do rest=${rest% }; done
+    out+=("$first$_FZF_SEP$_FZF_BLUE$rest$_FZF_RESET")
+  done
+  print -rl -- "${out[@]}" | _fzf_align "$_FZF_SEP"
+}
 
-  input="$([[ -p /dev/stdin ]] && cat - || return)"
+# ${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
+# 会原样输出这四个字符，所以换行只能走变量。必须在文件顶层声明 ——
+# 循环体内的标量 local 会往 stdout 打一行赋值，混进候选列表。
+typeset -g _FZF_NL=$'\n'
+# _fzf_format 的字段分隔符。与空白区分开才能传给 _fzf_align ——
+# 空白模式下它是「按空白切、剥前导空白」，指定分隔符时不是。
+typeset -g _FZF_SEP='^^'
+# 颜色转义序列。$'\e[34m' 写在双引号里不会被求值（和 $'\n' 同一个陷阱），
+# 只会得到字面的 `$'\e[34m'` 七个字符，所以必须先落到变量里。
+typeset -g _FZF_BLUE=$'\e[34m'
+typeset -g _FZF_RESET=$'\e[0m'
 
-  case $format in
-    manage | pinned)
-      rule='printf "%s^^\x1b[34m%s\x1b[0m\n", $F[0], join(" ", @F[1 .. $#F])'
-      ;;
-    outdated)
-      rule='printf "%s^^\x1b[34m%.15s\x1b[0m^^=>^^\x1b[33m%.15s\x1b[0m\n", $F[0], $F[1], join(" ", @F[2 .. $#F])'
-      ;;
-    general)
-      rule='printf "%s^^\x1b[34m%s\x1b[0m\n", $F[0], join(" ", @F[1 .. $#F])'
-      ;;
-    *) echo "Error: No such format: $format" && return 0 ;;
-  esac
+# 按分隔符对齐成表格，逐字节复刻 `column -t`：
+#   丢掉空行 -> 切列 -> 每列补齐到本列最大宽度 -> 列间 2 个空格 -> 末列不补
+#
+# $1 可选分隔符。给了就按它切（复刻 `column -s X -t`），没给就按空白切
+# （复刻 `column -s ' ' -t`）。两种模式的差别都在 _fzf_split 里。
+#
+# 四个容易漏掉的细节：
+#   - column 把连续分隔符当一个，且**空字段整个丢掉**（不占宽度也不占间隔），
+#     所以列号是按「剩下的字段」数的
+#   - 空白模式下 column 会剥每行前导空白、折叠连续空格；指定分隔符时不会
+#   - 制表符在空白模式下**不算**分隔符（因为 -s ' ' 只认字面空格）
+#   - 行尾空白会被去掉，所以「a 」输出成「a」
+#
+# 已知限制：column 按显示宽度算，zsh 的 ${#} 按字符数，含宽字符时对齐会偏。
+# 目前的调用方是 crates.io 依赖表与 fp/envf 的列表，字段都是 ASCII。
+_fzf_align() {          # $1=可选分隔符
+  local delim=$1 line cell
+  local -a rows cells keep widths
+  local i
 
-  [ -n "$input" ] && echo "$input" | perl -ane "$rule" | column -s '^^' -t
+  while IFS= read -r line; do
+    if [[ -n $delim ]]; then
+      [[ -n $line ]] || continue
+    else
+      while [[ $line == ' '* ]]; do line=${line# }; done
+      while [[ $line == *' ' ]]; do line=${line% }; done
+      [[ -n $line ]] || continue
+      while [[ $line == *"  "* ]]; do line=${line//  / }; done
+    fi
+    rows+=("$line")
+  done
+
+  widths=()
+  for line in "${rows[@]}"; do
+    cells=()
+    if [[ -n $delim ]]; then
+      # 分隔符是变量时 ${(s:$delim)var} 不展开（flag 参数是字面量），
+      # 所以先替换成换行再按行切。给 $delim 加引号是为了不让它当 glob。
+      keep=("${(@f)${line//"$delim"/$_FZF_NL}}")
+    else
+      keep=("${(@s: :)line}")
+    fi
+    # column 把空字段整个丢掉：不占宽度也不占间隔，列号按剩下的字段数
+    for cell in "${keep[@]}"; do
+      [[ -n $cell ]] && cells+=("$cell")
+    done
+    for (( i = 1; i <= ${#cells}; i++ )); do
+      (( ${#cells[i]} > ${widths[i]:-0} )) && widths[i]=${#cells[i]}
+    done
+  done
+
+  for line in "${rows[@]}"; do
+    cells=()
+    if [[ -n $delim ]]; then
+      keep=("${(@f)${line//"$delim"/$_FZF_NL}}")
+    else
+      keep=("${(@s: :)line}")
+    fi
+    for cell in "${keep[@]}"; do
+      [[ -n $cell ]] && cells+=("$cell")
+    done
+    line=''
+    for (( i = 1; i <= ${#cells}; i++ )); do
+      if (( i < ${#cells} )); then
+        line+="${(r:${widths[i]}:: :)${cells[i]}}  "
+      else
+        line+="${cells[i]}"
+      fi
+    done
+    print -r -- "$line"
+  done
 }
 
 # =============================================================================

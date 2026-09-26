@@ -103,7 +103,7 @@ _cargof_version_install() {
 
 _cargof_rollback() { _pkg_rollback cargo "$1" }
 _cargof_info() { _cargof_extract "$1" info | _fzf_pager }
-_cargof_deps() { _cargof_extract "$1" dependencies "$(_cargof_version_current "$1")" | column -s ' ' -t }
+_cargof_deps() { _cargof_extract "$1" dependencies "$(_cargof_version_current "$1")" | _fzf_align }
 _cargof_homepage() { _fzf_homepage "$(_cargof_extract "$1" homepage)" }
 
 _cargof_act() {

@@ -14,17 +14,14 @@ Env
 Npm Outdated
 ▔▔▔▔▔▔▔▔▔▔▔▔
 
-===== format=manage =====
-lodash  [34m4.17.21 some description here[0m
-react   [34m18.2.0 desc[0m
+===== format=manage（已删除的分支，应报错） =====
+Error: No such format: manage
 
-===== format=pinned =====
-lodash  [34m4.17.21 some description here[0m
-react   [34m18.2.0 desc[0m
+===== format=pinned（已删除的分支，应报错） =====
+Error: No such format: pinned
 
-===== format=outdated =====
-lodash  [34m4.17.21[0m  =>  [33msome descriptio[0m
-react   [34m18.2.0[0m   =>  [33mdesc[0m
+===== format=outdated（已删除的分支，应报错） =====
+Error: No such format: outdated
 
 ===== format=general =====
 lodash  [34m4.17.21 some description here[0m
@@ -32,6 +29,13 @@ react   [34m18.2.0 desc[0m
 
 ===== format=bogus =====
 Error: No such format: bogus
+
+===== general：制表符与连续空格都要压成单空格（对齐 perl join 的行为） =====
+a   [34mb c[0m
+dd  [34mee ff[0m
+
+===== general：空输入无输出 =====
+  (以上应为空)
 
 ===== 单条 =====
 beta
@@ -251,5 +255,16 @@ left-pad
   a: 动作 'go' 被 Ctrl-C 中断，已停止
   其余 3 项未执行，仍在列表里
   剩余 4 行: a b c d（应为 4，什么都没改成）
+
+===== 取值：掐掉对齐填充与颜色码 =====
+  带色带填充 [value]  (应为 value)
+  值含空格   [a b c]  (应为 a b c，不能只剩 c)
+
+===== 取值：值含空格时必须完整（回归点 1） =====
+  真实值 896 字符，输出 915 字符（应差 19 = 键名加 ' = '）
+  OK 值完整保留
+
+===== fzf 调用必须带 --ansi（回归点 2） =====
+  OK
 
 ### END

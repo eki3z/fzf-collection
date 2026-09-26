@@ -28,15 +28,34 @@ t_case_underline() {
 # 2. _fzf_format：五种取值下的输出
 #    已知：manage 与 pinned 共用同一分支，输出完全相同
 #    已知：bogus 走 *) 分支，打印错误后 return 0
+# 2. _fzf_format：只剩 general
+#    原来有 manage / pinned / outdated / general 四个分支，每个一条 perl printf
+#    规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走 _pkg_display，
+#    format 只有 general 还被 fp / envf 使用，另外三个分支无法到达，已删除，
+#    所以这里改为断言「不支持的 format 报错」而不是那三种渲染结果。
 t_case_format() {
   local fmt
   local format
-  for fmt in manage pinned outdated general bogus; do
-    t_sep "format=$fmt"
+  for fmt in manage pinned outdated; do
+    t_sep "format=$fmt（已删除的分支，应报错）"
     format=$fmt
     printf 'lodash\t4.17.21\tsome description here\nreact\t18.2.0\tdesc\n' \
       | _fzf_format
   done
+  t_sep "format=general"
+  format=general
+  printf 'lodash\t4.17.21\tsome description here\nreact\t18.2.0\tdesc\n' \
+    | _fzf_format
+  t_sep "format=bogus"
+  format=bogus
+  printf 'lodash\t4.17.21\tsome description here\n' | _fzf_format
+  t_sep "general：制表符与连续空格都要压成单空格（对齐 perl join 的行为）"
+  format=general
+  printf 'a\tb  c\ndd\tee\tff\n' | _fzf_format
+  t_sep "general：空输入无输出"
+  format=general
+  printf '' | _fzf_format
+  print -r -- "  (以上应为空)"
 }
 
 # 3. _fzf_read：fzf 非交互模式（--filter）
@@ -749,6 +768,54 @@ t_case_pkg_failure() {
   rm -f "$cnt" "$logf"
 }
 
+# 17. fp / envf 的取值与 --ansi
+#     回归点 1：envf 的行含对齐填充与颜色码，取值必须掐掉它们，且要取
+#     「首个字段之后的全部内容」而不是最后一个空白字段 —— 旧代码用
+#     $F[$#F]，PATH 里有 "/Applications/VMware Fusion.app/..." 时
+#     结果只剩 "Fusion.app/..."。
+#     回归点 2：fzf 必须收 --ani。不给的话它把 \e[34m 当 5 个普通字符，
+#     既不上色也把这 9 个字节算进显示宽度，长行于是被提前截断。
+t_case_other_tail() {
+  # 一次声明完，别在后面再写 local line 之类 —— 变量已是 local 时重复
+  # 声明（且不带赋值）会往 stdout 打一行 `line=...`，混进基线。
+  local ESC=$'\e' BLUE RESET PAD r line v
+  local bad=0 f n_all n_ansi
+  BLUE="${ESC}[34m"
+  RESET="${ESC}[0m"
+  PAD='                    '
+
+  t_sep "取值：掐掉对齐填充与颜色码"
+  line="${(l:24:: :)KEY}${BLUE}value${RESET}"
+  print -r -- "  带色带填充 [$(_fzf_tail "$line")]  (应为 value)"
+  line="${(l:24:: :)KEY}a b c"
+  print -r -- "  值含空格   [$(_fzf_tail "$line")]  (应为 a b c，不能只剩 c)"
+
+  t_sep "取值：值含空格时必须完整（回归点 1）"
+  v=$(printenv __MISE_ORIG_PATH)
+  if [[ -n $v ]]; then
+    line="__MISE_ORIG_PATH${(l:20:: :)}${BLUE}${v}${RESET}"
+    r="${line%%[[:space:]]*} = $(_fzf_tail "$line")"
+    print -r -- "  真实值 ${#v} 字符，输出 ${#r} 字符（应差 19 = 键名加 ' = '）"
+    if [[ $r == "__MISE_ORIG_PATH = $v" ]]; then
+      print -r -- '  OK 值完整保留'
+    else
+      print -r -- '  *** 错误：值被截断 ***'
+    fi
+  else
+    print -r -- '  (本机没有 __MISE_ORIG_PATH，跳过)'
+  fi
+
+  t_sep "fzf 调用必须带 --ansi（回归点 2）"
+  for f in "$root"/collections/fzf-other.zsh; do
+    [[ -f $f ]] || continue
+    n_all=$(grep -c '| fzf "' "$f")
+    n_ansi=$(grep -c '| fzf "[^"]*" --ansi' "$f")
+    print -r -- "  fzf 调用 $n_all 处，其中带 --ansi 的 $n_ansi 处"
+    (( n_all == n_ansi )) || { bad=1; print -r -- '  *** 有 fzf 调用缺 --ansi ***'; }
+  done
+  (( bad )) || print -r -- '  OK'
+}
+
 t_run_all() {
   t_case_underline
   t_case_format
@@ -768,5 +835,6 @@ t_run_all() {
   t_case_pkg_keyshape
   t_case_pkg_action_menu
   t_case_pkg_failure
+  t_case_other_tail
   printf '\n### END\n'
 }

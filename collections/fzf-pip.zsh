@@ -20,23 +20,47 @@ _pipf_list_outdated() {
     | jq -r '.[] | "\(.name)\t\(.version)\t=>\t\(.latest_version)"'
 }
 
+# 从 pip index 页面抠包名。锚点是第一个 `">` 到第一个 `</a>`，
+# 对应 perl 的非贪婪 /(.*?)<\/a>/。
 _pipf_list_available() {
-  curl -s "$(pip config get global.index-url)/" \
-    | perl -lne '/">(.*?)<\/a>/ && print $1'
+  local line rest
+  curl -s "$(pip config get global.index-url)/" | while IFS= read -r line; do
+    while [[ $line == *'>'*'</a>'* ]]; do
+      rest=${line#*>}
+      print -r -- "${rest%%</a>*}"
+      line=${line#*</a>}
+    done
+  done
 }
 
 # ---- pip show 字段提取（显式收参） ----
 
+# 整行含 "<key>: " 才命中，取冒号后的内容。
+# perl 版是 -slne '/^\Q$f\E: (.+)$/' 加 -s（-s 剥掉打印行的前导空白），
+# 所以冒号后若还有多余空格也要剥掉。
 _pipf_extract() {
-  _pipf show "$1" 2>/dev/null | perl -slne '/^\Q$f\E: (.+)$/ && print "$1"' -- -f="$2"
+  local line
+  _pipf show "$1" 2>/dev/null | while IFS= read -r line; do
+    [[ $line == *"$2: "* ]] || continue
+    line=${line#*"$2: "}
+    while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
+    print -r -- "$line"
+    break
+  done
 }
 
 # ---- 版本相关：显式收参 ----
 
 _pipf_version_list() {
-  _pipf index versions --pre "$1" 2>/dev/null \
-    | perl -lne '/Available versions: (.*)$/m && print $1' \
-    | perl -pe 's/, /\n/g'
+  local line s
+  _pipf index versions --pre "$1" 2>/dev/null | while IFS= read -r line; do
+    [[ $line == *'Available versions: '* ]] || continue
+    s=${line#*'Available versions: '}
+    # 换行必须走变量：${s//, /$'\n'} 里的 $'\n' 不被求值，
+    # 会原样输出这四个字符。flag 参数是字面量，替换位同理。
+    print -r -- "${s//, /$_PIP_NL}"
+    break
+  done
 }
 
 _pipf_version_current() {
@@ -86,6 +110,11 @@ _pipf_rollback() { _pkg_rollback pip "$1" }
 # base.zsh 已用 typeset -gA 声明过；这里再确认一次，使本文件即使被单独 source
 # 也不会把 PKG 变成普通数组（下标里的 ':' 会被当成算术求值）。
 [[ ${(t)PKG} == association ]] || typeset -gA PKG
+
+# 换行符。${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
+# 会原样输出这四个字符，所以只能走变量。必须在文件顶层声明 ——
+# 循环体内的标量 local 会往 stdout 打一行赋值，混进候选列表。
+typeset -g _PIP_NL=$'\n'
 
 PKG+=(
   'pip:title'          'Pip'
