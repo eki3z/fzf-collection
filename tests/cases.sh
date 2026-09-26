@@ -1049,12 +1049,79 @@ t_case_envf_width() {
   rm -rf "$ENVF_TMP"
 }
 
-# 19. README 与代码一致
+# 19. uvf 的列表解析
+#     uv 的 `tool list` / `tool list --outdated` 都不接受 --format json，
+#     manage 与 outdated 两个视图的行全靠解析文本，所以这是 uvf 里唯一值得
+#     钉住的行为：顶层行与 `- exe` 行混在同一次输出里，方括号注解还会随
+#     --show-* 变多（见 _uvf_list_outdated 的注释）。
+#     桩掉 uv 而不是真调：没有 uv 的机器也得能跑这条用例。
+#
+# 断言相等就把实际值一起打出来（它会进基线，逐字节可比）；不等打实际与期望。
+# tab 显示成 -> ，免得基线里混进裸制表符。
+t_uvf_expect() {      # $1=实际 $2=期望 $3=说明
+  local got=${1//$'\t'/->} want=${2//$'\t'/->}
+  if [[ $1 == "$2" ]]; then
+    print -r -- "  OK   $3: [$got]"
+  else
+    print -r -- "  *** 错误 $3: 实际 [$got] 期望 [$want]"
+  fi
+}
+
+t_case_uvf_rows() {
+  local got want
+  # 桩：$UV_STUB 的每一行就是 uv 打印的一行。UV_STUB 为空时 ${(f)UV_STUB}
+  # 仍给出一个空元素，桩会打一个空行；解析端按「不足两段」丢掉它，
+  # 所以「空工具目录」这一格的期望值仍然是空。
+  functions[uv_orig]=$functions[uv]
+  uv() { print -rl -- ${(f)UV_STUB} }
+
+  t_sep "manage：顶层行取名与版本，- 开头的可执行文件行丢掉"
+  UV_STUB=$'browser-use v0.13.10\n- browser\n- bu\nwatchdog v6.0.0\n- watchmedo'
+  got=$(_uvf_list_installed)
+  want=$'browser-use\t0.13.10\nwatchdog\t6.0.0'
+  t_uvf_expect "$got" "$want" '两个工具'
+
+  t_sep "manage：空工具目录（uv 打的是 No tools installed，走 stderr）"
+  UV_STUB=''
+  got=$(_uvf_list_installed)
+  t_uvf_expect "$got" '' '无输出'
+
+  t_sep "manage：只有可执行文件名的行不算工具（名字里没有版本）"
+  UV_STUB=$'- watchmedo'
+  got=$(_uvf_list_installed)
+  t_uvf_expect "$got" '' '无输出'
+
+  t_sep "outdated：拆出 name/当前/=>/最新 四列"
+  UV_STUB=$'ruff v0.2.0 [latest: 0.16.9]\n- ruff'
+  got=$(_uvf_list_outdated)
+  want=$'ruff\t0.2.0\t=>\t0.16.9'
+  t_uvf_expect "$got" "$want" '单个工具'
+
+  t_sep "outdated：其余方括号注解与路径必须先截掉，不能混进版本号"
+  # 这一行同时带 [required:] [CPython] [latest:] 与结尾的 env 路径 ——
+  # 截断若发生在摘 [latest:] 之前，版本列会变成 "0.1.0] [required: ==0.1.0]..."
+  UV_STUB=$'ruff v0.1.0 [required: ==0.1.0] [CPython 3.14.7] [latest: 0.16.9] (/tmp/t/ruff)'
+  got=$(_uvf_list_outdated)
+  want=$'ruff\t0.1.0\t=>\t0.16.9'
+  t_uvf_expect "$got" "$want" '注解与路径都被截掉'
+
+  t_sep "outdated：已是最新时 uv 一行都不给（视图应为空）"
+  UV_STUB=''
+  got=$(_uvf_list_outdated)
+  t_uvf_expect "$got" '' '无输出'
+
+  functions[uv]=$functions[uv_orig]
+  unset 'uv_orig'
+}
+
+# 20. README 与代码一致
 #     README 曾经把不存在的 `uvf`、不存在的 `registry` view 写进去，
 #     漏掉 pinned / gemf / envf，依赖表也只提了 grep coreutils 和 gh jq。
 #     文档漂移不会让任何东西坏掉，所以不会有人发现 —— 除了专门查它的时候。
 #     cargof / ffp 已移除、fp 已改名为 pathf，本用例的清单必须跟着变，
 #     否则它会把「文档写了不存在的命令」当成正确。
+#     uvf 是后来真加上的：清单里加了它，下面「不该出现的名字」那段对 uvf 的
+#     断言也随之删除 —— 那条断言的来由是它当时确实不存在。
 t_case_readme() {
   local R=$root/README.md
   if [[ ! -f $R ]]; then
@@ -1064,7 +1131,7 @@ t_case_readme() {
 
   t_sep "公开命令：README 必须逐个收录，且不多不少"
   local -a want
-  want=(brewf npmf pnpmf pipf gemf ghf pathf envf)
+  want=(brewf npmf pnpmf pipf uvf gemf ghf pathf envf)
   local c
   for c in "${want[@]}"; do
     if grep -qF -- "\`$c\`" "$R"; then
@@ -1085,7 +1152,7 @@ t_case_readme() {
 
   t_sep "view 列表：README 必须覆盖注册表里的全部 view，且不写多余的"
   local eco v line miss extra
-  for eco in brew npm pnpm pip gem gh; do
+  for eco in brew npm pnpm pip uv gem gh; do
     local -a vs
     vs=(${(s: :)${PKG[$eco:views]}})
     (( ${#vs} )) || continue
@@ -1114,13 +1181,10 @@ t_case_readme() {
   done
 
   t_sep "不该出现的名字"
-  for c in uvf fzf-uv; do
-    if grep -qF "$c" "$R"; then
-      print -r -- "  *** 错误：README 提到 $c，但代码里没有这个模块"
-    else
-      print -r -- "  OK   不提 $c"
-    fi
-  done
+  # 这里原来还断言 README 不得提到 uvf / fzf-uv —— 当初成立是因为 uvf 真的
+  # 不存在。uvf 加进来之后那两条前提就没了，而「README 提到的命令必须真的
+  # 存在」在上面那段反向检查里已经逐个查过（grep '`[a-z]+f`' 对 defined），
+  # 所以这里不必再维护一份手工名单。
   if grep -qF '`registry`' "$R"; then
     print -r -- '  *** 错误：README 提到 registry view，但注册表里没有'
   else
@@ -1154,10 +1218,12 @@ t_case_readme() {
   # head / tail 不单列：head 只跟 find 一起用；tail 在 gem 里是变量名。
   # cut 是流式 search 路径的一部分（见 _pkg_streamable），sed 是 pipf 抠 index 页
   # 链接用的（87 万行，见 _pipf_list_available），两者都必须列进来。
+  # uv 放在最后：它是 alternation 里最短的一个，放前面会把 uvtool 之类也切进来
+  # （-w 挡得住大部分，但没必要依赖它）。
   local -a used
   used=(${(u)${(s: :)$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh \
         | sed 's/[[:space:]]#.*$//' \
-        | grep -howE 'all-the-package-names|pip-autoremove|brew|npm|pnpm|pip3?|gem|gh|jq|curl|find|git|grep|cut|sed|sort|uniq|printenv|less|open|dirname' | tr 'A-Z' 'a-z' | sort -u)}})
+        | grep -howE 'all-the-package-names|pip-autoremove|brew|npm|pnpm|pip3?|gem|gh|jq|curl|find|git|grep|cut|sed|sort|uniq|printenv|less|open|dirname|uv' | tr 'A-Z' 'a-z' | sort -u)}})
   for c in "${used[@]}"; do
     # 必须在**依赖表**里，即以 "| `" 开头的表格行。
     # 之前只查「README 任意位置提过」，于是散文里顺口提一句就能蒙混过关 ——
@@ -1289,6 +1355,7 @@ t_run_all() {
   t_case_pkg_stream
   t_case_other_tail
   t_case_envf_width
+  t_case_uvf_rows
   t_case_readme
   printf '\n### END\n'
 }

@@ -18,6 +18,7 @@ A collection of commands to enhance commandline with [FZF](https://github.com/ju
     - [npmf](#npmf)
     - [pnpmf](#pnpmf)
     - [pipf](#pipf)
+    - [uvf](#uvf)
     - [gemf](#gemf)
     - [ghf](#ghf)
     - [pathf](#pathf)
@@ -27,6 +28,8 @@ A collection of commands to enhance commandline with [FZF](https://github.com/ju
     - [FZF_COLLECTION_OPTS](#fzf_collection_opts)
     - [_ENVF_VALMAX](#_envf_valmax)
     - [_PKG_COLSEP](#_pkg_colsep)
+    - [_UVF_INDEX](#_uvf_index)
+    - [_UVF_PYPI_JSON](#_uvf_pypi_json)
   - [Development](#development)
   - [Todo](#todo)
 
@@ -74,6 +77,7 @@ beyond `fzf` at load time.
 | `brewf` | `brew`, `grep`. `git` only for `rollback`; `find` and `dirname` only for the `unpin` action |
 | `npmf`, `pnpmf` | `npm` / `pnpm`, `jq`, and `all-the-package-names` plus `cut` for `search` |
 | `pipf` | `pip` or `pip3`, `jq`, `curl` plus `grep` and `sed` for `search`. `pip-autoremove` is offered as an extra action when installed |
+| `uvf` | `uv`, `jq`, `curl` plus `grep` and `sed`. `outdated` needs network access to the index |
 | `gemf` | `gem` |
 | `ghf` | `gh`, authenticated. No external `jq` — `gh api --jq` is built in |
 | `pathf` | `find` with `-printf`, so GNU or Homebrew findutils, not BSD, plus `uniq` |
@@ -88,6 +92,16 @@ beyond `fzf` at load time.
 global.index-url` points at, so it needs `curl` and network access. The
 page holds 871,000 lines; the links are pulled out with `grep -o` and
 `sed` so that no shell loop ever walks them.
+
+`uvf`'s `search` scrapes the same kind of page from `_UVF_INDEX`. Its
+`outdated` view is `uv tool list --outdated`, which compares each tool
+against the index; the installed and latest versions come back inside the
+text output, so there is no `jq` in the list queries. `jq` is used for the
+PyPI JSON that `rollback`, `info`, `deps` and `homepage` need. Two things
+`uv` itself does not do: the index is not read from `uv.toml` — see
+[_UVF_INDEX](#_uvf_index) — and a tool installed from git is reported
+against the same-named package on PyPI, so its `latest` is a version you
+cannot install from where the tool actually came from.
 
 Without `all-the-package-names`, `npmf` and `pnpmf` stop immediately with
 a message rather than running with a broken view. Everything else degrades
@@ -132,6 +146,27 @@ it was.
 
 `pipf`: `outdated` `search` `manage`
 
+### uvf
+
+`uvf`: `outdated` `search` `manage`
+
+`uvf` is for the global commands `uv tool install` puts on your `PATH`,
+not for the dependencies of a uv project.
+
+`outdated` is `uv tool list --outdated` (uv 0.11.0 and later). Tools that
+are already current do not appear, so an empty list means there is
+nothing to upgrade. It only compares each tool's own version — the extra
+requirements passed to `uv tool install --with` are not checked, even
+though `upgrade` will move them.
+
+`search` lists the whole index, so most entries are not tools at all;
+picking one fails and the row stays in the list. See
+[Requirements](#requirements) and [_UVF_INDEX](#_uvf_index).
+
+`deps` reads the tool's own environment when it is installed, which
+includes the `--with` requirements, and falls back to what PyPI declares
+when it is not.
+
 ### gemf
 
 `gemf`: `outdated` `search` `manage`
@@ -166,6 +201,7 @@ FZF_COLLECTION_MODULES=(
   npm
   pnpm
   pip
+  uv
   gem
   gh
   other
@@ -212,6 +248,31 @@ All `*-f` views. Number of spaces between columns. Defaults to `5`.
 ```sh
 export _PKG_COLSEP=3
 ```
+
+### _UVF_INDEX
+
+`uvf` `search` only. The simple index page it scrapes package names from.
+Defaults to `https://pypi.org/simple`, and the trailing `/` is added for
+you — the page answers 301 without it.
+
+It is **not** read from `uv.toml` or `UV_DEFAULT_INDEX`: `uv` has no
+subcommand that prints the index it resolved, so nothing here would stay
+in step with your config. Set it yourself when you install through a
+mirror.
+
+```sh
+export _UVF_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+### _UVF_PYPI_JSON
+
+`uvf` `rollback` / `info` / `deps` / `homepage` only. Base URL of the
+PyPI JSON API. Defaults to `https://pypi.org/pypi`.
+
+Deliberately independent of [_UVF_INDEX](#_uvf_index): a mirror's JSON
+snapshot can be far behind (Tuna still reported ruff 0.5.7 while PyPI was
+on 0.16.9), and these four need current metadata. A stale snapshot makes
+`rollback` offer versions that are not installable.
 
 ## Development
 

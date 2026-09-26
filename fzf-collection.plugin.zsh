@@ -25,6 +25,7 @@ if [ -z "$FZF_COLLECTION_MODULES" ]; then
     npm
     pnpm
     pip
+    uv
     gem
     gh
     other

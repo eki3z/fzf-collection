@@ -178,19 +178,22 @@ left-pad
 ===== 单选 =====
   n=1 name=[only one]
 
-===== 注册表自洽性（6 个 ecosystem） =====
+===== 注册表自洽性（7 个 ecosystem） =====
   _pkg_rollback 读的数据键：version-list version-current version-install
   OK 无碰撞，派发目标全部存在
   每个 view 都声明了 title/actions/cols 的：是
-  已登记的 ecosystem：gem pip brew npm pnpm gh
+  已登记的 ecosystem：gem uv pip brew npm pnpm gh
 
 ===== 键形状：每个三段键的第二段 X 必须有 PKG[<eco>:X:title] =====
-  OK 全部 6 个 ecosystem 的三段键顺序一致
+  OK 全部 7 个 ecosystem 的三段键顺序一致
 
 ===== 驱动解析：每个 view 的动作清单都非空（回车必须有子菜单） =====
   OK   gem/outdated     5 个动作
   OK   gem/search       2 个动作
   OK   gem/manage       5 个动作
+  OK   uv/outdated      6 个动作
+  OK   uv/search        5 个动作
+  OK   uv/manage        5 个动作
   OK   pip/outdated     6 个动作
   OK   pip/search       2 个动作
   OK   pip/manage       6 个动作
@@ -276,6 +279,9 @@ left-pad
   缓冲   gem/outdated
   流式   gem/search
   缓冲   gem/manage
+  缓冲   uv/outdated
+  流式   uv/search
+  缓冲   uv/manage
   缓冲   pip/outdated
   流式   pip/search
   缓冲   pip/manage
@@ -323,11 +329,31 @@ left-pad
 ===== 取值层：值为空的环境变量（不能用「是否为空」判存在性） =====
   OK   输出 [_ENVF_EMPTY_TEST_VAR = ]
 
+===== manage：顶层行取名与版本，- 开头的可执行文件行丢掉 =====
+  OK   两个工具: [browser-use->0.13.10
+watchdog->6.0.0]
+
+===== manage：空工具目录（uv 打的是 No tools installed，走 stderr） =====
+  OK   无输出: []
+
+===== manage：只有可执行文件名的行不算工具（名字里没有版本） =====
+  OK   无输出: []
+
+===== outdated：拆出 name/当前/=>/最新 四列 =====
+  OK   单个工具: [ruff->0.2.0->=>->0.16.9]
+
+===== outdated：其余方括号注解与路径必须先截掉，不能混进版本号 =====
+  OK   注解与路径都被截掉: [ruff->0.1.0->=>->0.16.9]
+
+===== outdated：已是最新时 uv 一行都不给（视图应为空） =====
+  OK   无输出: []
+
 ===== 公开命令：README 必须逐个收录，且不多不少 =====
   OK   收录了 brewf
   OK   收录了 npmf
   OK   收录了 pnpmf
   OK   收录了 pipf
+  OK   收录了 uvf
   OK   收录了 gemf
   OK   收录了 ghf
   OK   收录了 pathf
@@ -338,28 +364,29 @@ left-pad
   OK   npmf: outdated search manage
   OK   pnpmf: outdated search manage
   OK   pipf: outdated search manage
+  OK   uvf: outdated search manage
   OK   gemf: outdated search manage
   OK   ghf: repos
 
 ===== 不该出现的名字 =====
-  OK   不提 uvf
-  OK   不提 fzf-uv
   OK   不提 registry view
 
 ===== 默认模块列表 =====
-  代码:   [brew npm pnpm pip gem gh other]
-  README: [brew npm pnpm pip gem gh other]
+  代码:   [brew npm pnpm pip uv gem gh other]
+  README: [brew npm pnpm pip uv gem gh other]
   OK   一致
 
 ===== 依赖：README 提到的必须真被调用，代码用到的必须被提到 =====
-  代码用到的 22 个外部命令都已在依赖表中
+  代码用到的 23 个外部命令都已在依赖表中
   OK   perl 在代码中 0 次调用，README 未声称需要
   OK   column 在代码中 0 次调用，README 未声称需要
 
 ===== 可配置项：代码里每个可覆盖的变量都必须在 README 里有，且名字一致 =====
   OK   _PKG_COLSEP 有文档
   OK   _ENVF_VALMAX 有文档
-  代码里可覆盖的插件变量共 2 个：_PKG_COLSEP _ENVF_VALMAX
+  OK   _UVF_INDEX 有文档
+  OK   _UVF_PYPI_JSON 有文档
+  代码里可覆盖的插件变量共 4 个：_PKG_COLSEP _ENVF_VALMAX _UVF_INDEX _UVF_PYPI_JSON
 
 ===== clone 地址必须指向本仓库，不能是上游 =====
   origin = github.com/eki3z/fzf-collection
