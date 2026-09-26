@@ -258,6 +258,7 @@ left-pad
   OK 值完整保留
 
 ===== fzf 调用必须带 --ansi（回归点 2） =====
+  fzf 调用 2 处，其中带 --ansi 的 2 处
   OK
 
 ===== 显示层：候选行不得超屏宽 =====
@@ -278,6 +279,69 @@ left-pad
 
 ===== 取值层：值为空的环境变量（不能用「是否为空」判存在性） =====
   OK   输出 [_ENVF_EMPTY_TEST_VAR = ]
-  (没有 README.md，跳过)
+
+===== 公开命令：README 必须逐个收录，且不多不少 =====
+  OK   收录了 brewf
+  OK   收录了 npmf
+  OK   收录了 pnpmf
+  OK   收录了 pipf
+  OK   收录了 gemf
+  OK   收录了 ghf
+  OK   收录了 pathf
+  OK   收录了 envf
+
+===== view 列表：README 必须覆盖注册表里的全部 view，且不写多余的 =====
+  OK   brewf: outdated search manage pinned tap
+  OK   npmf: outdated search manage
+  OK   pnpmf: outdated search manage
+  OK   pipf: outdated search manage
+  OK   gemf: outdated search manage
+  OK   ghf: repos
+
+===== 不该出现的名字 =====
+  OK   不提 uvf
+  OK   不提 fzf-uv
+  OK   不提 registry view
+
+===== 默认模块列表 =====
+  代码:   [brew npm pnpm pip gem gh other]
+  README: [brew npm pnpm pip gem gh other]
+  OK   一致
+
+===== 依赖：README 提到的必须真被调用，代码用到的必须被提到 =====
+  代码用到的 20 个外部命令都已在依赖表中
+  OK   perl 在代码中 0 次调用，README 未声称需要
+  OK   column 在代码中 0 次调用，README 未声称需要
+
+===== 可配置项：代码里每个可覆盖的变量都必须在 README 里有，且名字一致 =====
+  OK   _PKG_COLSEP 有文档
+  OK   _ENVF_VALMAX 有文档
+  代码里可覆盖的插件变量共 2 个：_PKG_COLSEP _ENVF_VALMAX
+
+===== clone 地址必须指向本仓库，不能是上游 =====
+  origin = github.com/eki3z/fzf-collection
+  OK   README 的 clone 地址与 origin 一致
+
+===== jq：README 声称的用法必须与代码一致 =====
+  OK   brew 的 view 数据源确实不用外部 jq
+  OK   gem 的 view 数据源确实不用外部 jq
+  OK   npm 的 outdated 用 jq，README 也列了
+  OK   pnpm 的 outdated 用 jq，README 也列了
+  OK   pip 的 outdated 用 jq，README 也列了
+
+===== FZF_COLLECTION_OPTS 必须与 _fzf_opts 逐项一致 =====
+  *** 错误：与代码里的 _fzf_opts 不一致
+      README:  --ansi
+--bind
+--bind
+--cycle
+--exact
+--header-first
+--info
+--no-multi
+--reverse
+--sort
+--tiebreak
+      _fzf_opts: 
 
 ### END

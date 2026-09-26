@@ -131,6 +131,13 @@ hygiene_gate() {
         if (s ~ /^done([ \t]*;)?$/) { if (top >= 1 && kind[top] == "loop") top--; next }
         if (s ~ /^\}([ \t]*;)?$/)  { if (top >= 1 && kind[top] == "func") top--; next }
         if (s ~ /^(for|while|until|select|repeat)([ \t]|$)/ || s ~ /^do$/) {
+          # 单行循环（`for k in a b; do unset ...; done`）在同一行里就闭合了。
+          # 早年这里只看开头就压栈，于是这种 for 会留下一个永远弹不掉的 loop：
+          # 后面凡是缩进比它深的 local 都被误报成「循环体内的标量 local」。
+          # 症状是给一个嵌套的桩函数写个 local 就 FAIL，与那条规则的真意无关。
+          rest = s
+          sub(/^(for|while|until|select|repeat)[ \t]+/, "", rest)
+          if (rest ~ /;[ \t]*done([ \t;]|$)/) next
           top++; kind[top] = "loop"; lind[top] = ind; next
         }
         # 函数起点。必须容许 { 后跟行尾注释 —— 本仓库的函数几乎都这么写
@@ -157,6 +164,12 @@ hygiene_gate() {
 # 这样用例能看到完整的注册表。
 run_cases() {
   ( cd "$root" && zsh -c '
+      # $root 必须在这里重新导出：用例里有多处 "$root"/base.zsh 与
+      # local R=$root/README.md，run.sh 里的 $root 不会跟着进这个子 shell。
+      # 少了这一句，那些检查会安静地什么都不做 —— README 一致性门与
+      # fzf --ansi 门都曾因此一直是空跑，基线里只留下一个「OK」。
+      root=$PWD
+      export root
       source ./fzf-collection.plugin.zsh || exit 1
       source ./tests/cases.sh || exit 1
       t_run_all
