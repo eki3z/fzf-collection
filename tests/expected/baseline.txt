@@ -189,13 +189,13 @@ left-pad
 
 ===== 驱动解析：每个 view 的动作清单都非空（回车必须有子菜单） =====
   OK   gem/outdated     5 个动作
-  OK   gem/search       3 个动作
+  OK   gem/search       2 个动作
   OK   gem/manage       5 个动作
   OK   pip/outdated     6 个动作
-  OK   pip/search       3 个动作
+  OK   pip/search       2 个动作
   OK   pip/manage       6 个动作
   OK   brew/outdated   10 个动作
-  OK   brew/search     14 个动作
+  OK   brew/search     12 个动作
   OK   brew/manage     13 个动作
   OK   brew/pinned     12 个动作
   OK   brew/tap         2 个动作
@@ -249,6 +249,49 @@ left-pad
   其余 3 项未执行，仍在列表里
   剩余 4 行: a b c d（应为 4，什么都没改成）
 
+===== 常规输入：三行，含空行 =====
+  n=2 [alpha	1.0 beta	2.0]
+
+===== 末行无换行 =====
+  n=2 [alpha	1.0 beta]
+
+===== 只有空行 =====
+  n=0 []
+
+===== 无输入 =====
+  n=0
+
+===== 空行与首尾空白不是一回事：'  ' 要留着 =====
+  n=2 [   x	]
+  fzf#1 收到 2 个候选: alpha,beta
+  fzf#2 收到 1 个候选: install
+
+  fzf#3 收到 2 个候选: alpha,beta
+  查询被调用 2 次（2 = 列表 + 动作后回到列表）
+  _PKG_ROWS 长度 0（0 = 流式路径不缓冲）
+  动作收到: act=show pkg=[alpha]
+  fzf 共被调用 3 次（3 = 列表 + 子菜单 + 取消）
+
+===== 流式分类：448 万行的 npm / pnpm search 必须判成可流式 =====
+  缓冲   gem/outdated
+  流式   gem/search
+  缓冲   gem/manage
+  缓冲   pip/outdated
+  流式   pip/search
+  缓冲   pip/manage
+  缓冲   brew/outdated
+  流式   brew/search
+  缓冲   brew/manage
+  缓冲   brew/pinned
+  缓冲   brew/tap
+  缓冲   npm/outdated
+  流式   npm/search
+  缓冲   npm/manage
+  缓冲   pnpm/outdated
+  流式   pnpm/search
+  缓冲   pnpm/manage
+  缓冲   gh/repos
+  OK 448 万行的 search 是流式，多列视图仍走缓冲
 ===== 取值：掐掉对齐填充与颜色码 =====
   带色带填充 [value]  (应为 value)
   值含空格   [a b c]  (应为 a b c，不能只剩 c)
@@ -309,7 +352,7 @@ left-pad
   OK   一致
 
 ===== 依赖：README 提到的必须真被调用，代码用到的必须被提到 =====
-  代码用到的 20 个外部命令都已在依赖表中
+  代码用到的 22 个外部命令都已在依赖表中
   OK   perl 在代码中 0 次调用，README 未声称需要
   OK   column 在代码中 0 次调用，README 未声称需要
 

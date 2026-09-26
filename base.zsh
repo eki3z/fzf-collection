@@ -181,7 +181,9 @@ _fzf_align() {          # $1=可选分隔符
 # 驱动层
 #
 # 7 个包管理器的 collection 全部走这里。相对重构前的写法：
-#   - 列表是结构化行 name<TAB>f2<TAB>...，整轮 session 只查询一次，缓存在 _PKG_ROWS
+#   - 列表是结构化行 name<TAB>f2<TAB>...
+#   - 列表默认整轮 session 只查询一次，缓存在 _PKG_ROWS，动作后从内存删行
+#   - 例外：单列且没有可达 mutating 动作的视图走流式，见 _pkg_streamable
 #   - 不写 /tmp 临时文件，不靠 funcstack 递归重入
 #   - 显示名由注册表提供，不再从函数名反推
 #   - 函数派发用 "$fn" 间接展开（zsh 的 nameref 不能派发函数，见计划 2.3）
@@ -196,6 +198,7 @@ _fzf_align() {          # $1=可选分隔符
 typeset -gA PKG         # 注册表：PKG[<eco>[:<view>]][:<field>] = value
 typeset -ga _PKG_ROWS    # 当前 session 的列表，由 _pkg_session 独占
 typeset -ga _PKG_FIELDS # _pkg_split_tabs 的输出
+typeset -gi _PKG_STREAM # 1 = 当前 view 走流式路径（_pkg_feed 用），见 _pkg_streamable
 
 # 注册表类型自检。关联数组被误重建为普通数组时给出明确诊断，
 # 而不是让下标里的 ':' 被当成三元运算符。
@@ -287,14 +290,18 @@ _pkg_display() {           # $1=eco $2=view
 
   widths=()
   for (( i = 1; i <= nf; i++ )); do widths[i]=0; done
-  for line in "${_PKG_ROWS[@]}"; do
-    _pkg_split_tabs "$line"
-    flds=("${_PKG_FIELDS[@]}")
-    for (( i = 1; i <= nf; i++ )); do
-      cell=${flds[i]:-}
-      (( ${#cell} > widths[i] )) && widths[i]=${#cell}
+  # 单列时 widths 一次都用不到（补齐只发生在 i < nf 的分支里，而单列没有那种分支），
+  # 所以整个预扫描可以跳过：它要再把全表过一遍，4 万行就是 3~4s 白花。
+  if (( nf > 1 )); then
+    for line in "${_PKG_ROWS[@]}"; do
+      _pkg_split_tabs "$line"
+      flds=("${_PKG_FIELDS[@]}")
+      for (( i = 1; i <= nf; i++ )); do
+        cell=${flds[i]:-}
+        (( ${#cell} > widths[i] )) && widths[i]=${#cell}
+      done
     done
-  done
+  fi
 
   for line in "${_PKG_ROWS[@]}"; do
     _pkg_split_tabs "$line"
@@ -345,16 +352,79 @@ _pkg_display() {           # $1=eco $2=view
 }
 
 # 收集查询结果。_PKG_ROWS 里是干净的 name<TAB>rest，不含颜色与对齐空格。
+#
+# 必须一次 slurp 完再按行切，不能用 while-read + arr+=()：
+# zsh 的数组 append 每次都要重新分配整个数组，于是这一段是 O(n^2)。
+# 实测 8 万行 172s、44 万行（取一半）45s，翻一倍就是 4 倍。
+# npm / pnpm 的 search 有 448 万行（all-the-package-names），
+# 照 while-read 写要一个多小时才把第一批候选交给 fzf —— 表现就是「一直不出候选」。
+#
+# ${(@f)$(cat)} 是一次 fork + 一次批量切分，80 万行 0.4s。
+# 代价是整份列表会短暂以单个字符串的形式驻留；只有走缓冲路径的视图会到这里，
+# 它们的行数都在几百到几千（outdated / manage / pinned / gem、pip 的 search）。
 _pkg_read_rows() {
-  local line
-  _PKG_ROWS=()
-  while IFS= read -r line; do
-    [[ -z $line ]] && continue
-    _PKG_ROWS+=("$line")
-  done
+  local -a lines
+  lines=("${(@f)$(cat)}")
+  # 命令替换会吃掉尾部换行，按行切完末尾可能多出一个空元素。
+  # ${(@)arr:#} 用空模式删掉所有空串，等价于原来的 [[ -z $line ]] && continue。
+  _PKG_ROWS=("${(@)lines:#}")
 }
 
-# 整个 session 仅此一次查询
+# 该视图能不能走流式路径（不落 _PKG_ROWS，直接把查询结果管道给 fzf）。
+#
+# 两个条件都要满足：
+#   1. cols 只声明一列。单列视图里 _pkg_display 的净效果就是「取首字段」——
+#      首列原样输出、不补齐、不上色，于是整层可以退化成 cut -f1。
+#   2. 视图的动作里没有一个是 mutating。没有 mutating 就没有删行，
+#      _PKG_ROWS 也就没有存在理由。
+#
+# 满足时 _pkg_feed 的候选链是
+#     _pkg_query | cut -f1 | grep -v '^$' | fzf
+# 语义与缓冲路径一致（取首字段 + 丢空行），但 zsh 一行都不碰。
+# npm / pnpm 的 search（448 万行）走的正是这条：all-the-package-names 本身 0.7s，
+# cut + grep 加起来不到 0.2s，fzf 立刻开始出候选 —— 与重构前 _fzf_search 的
+# `$available | fzf` 一样。重构后两个 search 视图都被判成不可流式，
+# 于是掉进 O(n^2) 的缓冲路径，这就是「以前秒开、现在一直不出来」的原因。
+#
+# 代价：每次回到列表都要重查一次（0.7s）。旧驱动用 /tmp 缓存文件避开这一下，
+# 那是本驱动刻意去掉的机制，这里不捡回来。
+_pkg_streamable() {        # $1=eco $2=view -> 返回 0 表示可流式
+  local eco=$1 view=$2 a m
+  local -a acts muts cols
+  acts=(${(s: :)$(_pkg_view_get "$eco" "$view" actions)})
+  (( ${#acts} )) || acts=(${(s: :)$(_pkg_get "$eco" actions)})
+  _pkg_view_mutating "$eco" "$view"
+  muts=("${_PKG_MUTATING[@]}")
+  for a in "${acts[@]}"; do
+    for m in "${muts[@]}"; do
+      [[ $a == "$m" ]] && return 1
+    done
+  done
+  # cols 没声明时 _pkg_display 按单列处理，这里必须同样按单列算
+  cols=(${(s:,:)$(_pkg_view_get "$eco" "$view" cols)})
+  (( ${#cols} <= 1 )) || return 1
+  return 0
+}
+
+# 送候选给 fzf，选中行写到 stdout。$1=eco $2=view，其余参数透传给 _pkg_read。
+# 两条路径只在「候选从哪来」上不同，动作与子菜单逻辑完全共用。
+_pkg_feed() {
+  local eco=$1 view=$2
+  shift 2
+  if (( _PKG_STREAM )); then
+    _pkg_query "$eco" "$view" | cut -f1 | grep -v '^$' | _pkg_read "$@"
+  else
+    # 列表被清空时（最后一轮 mutating 全删完）不能让 print 打出一个空行 ——
+    # 那会变成一条空白候选，让用户能选中它。直接不发任何行，fzf 立刻退出，
+    # 与 _pkg_display 在空表时 return 0 的效果一致。
+    if (( ${#_PKG_ROWS} )); then
+      print -rl -- "${_PKG_ROWS[@]}" | _pkg_display "$eco" "$view" | _pkg_read "$@"
+    fi
+  fi
+}
+
+# 调用注册表里登记的查询函数。缓冲路径整个 session 只调一次；
+# 流式路径每次渲染列表都调一次（见 _pkg_streamable 的代价说明）。
 _pkg_query() {
   local fn
   fn=$(_pkg_get "$1" "$2") || return 1
@@ -483,13 +553,14 @@ _pkg_report() {          # $1=act
   print -r -- "  其余 ${_PKG_PENDING} 项未执行，仍在列表里"
 }
 
-# view 循环：整个 session 只查询一次，动作后从内存删行，不重查、不落盘。
+# view 循环：缓冲路径整轮 session 只查询一次，动作后从内存删行，不重查、不落盘；
+# 流式路径（_pkg_streamable）每次回到列表重查，但从不把列表读进 zsh。
 _pkg_session() {           # $1=eco $2=view
   local eco=$1 view=$2 sel act p
   local -i strict
   local -a picked mutating loop opt
   typeset -ga _PKG_PICKED _PKG_DONE _PKG_FAILED
-  typeset -gi _PKG_PENDING _PKG_RC
+  typeset -gi _PKG_PENDING _PKG_RC _PKG_STREAM
 
   header=$(_pkg_view_get "$eco" "$view" title)
   [[ -n $header ]] || header=$(_pkg_get "$eco" title)
@@ -498,15 +569,23 @@ _pkg_session() {           # $1=eco $2=view
   loop=(${(s: :)$(_pkg_get "$eco" loop)})
   opt=(${(s: :)$(_pkg_view_get "$eco" "$view" opt)})
 
-  _pkg_query "$eco" "$view" | _pkg_read_rows
-  if (( ! ${#_PKG_ROWS} )); then
-    _fzf_msg "Nothing to show." "$header" && return 0
+  _PKG_STREAM=0
+  if _pkg_streamable "$eco" "$view"; then
+    _PKG_STREAM=1
+    # 清掉上一个 view 可能留下的行。流式路径不读它，但 _PKG_ROWS 是全局的，
+    # 留着上一批数据只会让人误以为本视图也缓冲过。
+    _PKG_ROWS=()
+  else
+    _pkg_query "$eco" "$view" | _pkg_read_rows
+    if (( ! ${#_PKG_ROWS} )); then
+      _fzf_msg "Nothing to show." "$header" && return 0
+    fi
   fi
 
   while :; do
     # 必须把列表管道给 fzf。漏掉这一步 fzf 会去读终端，
     # 把用户输入当成候选列表（表现为列出了完全无关的内容）。
-    sel=$(_pkg_display "$eco" "$view" | _pkg_read --multi $opt) || break
+    sel=$(_pkg_feed "$eco" "$view" --multi $opt) || break
     [[ -n $sel ]] || break
     # 必须用 ${(f)sel} 或 "${(@f)sel}"。写成 ${(f)"$sel"}（带引号的展开配 (f) flag）
     # 是非法语法，且只在运行时才报 bad substitution —— zsh -n 检查不出来。

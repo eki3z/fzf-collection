@@ -192,7 +192,12 @@ PKG+=(
 
   'brew:search'         '_brewf_list_available'
   'brew:search:title'   'Brew Search'
-  'brew:search:actions' 'install rollback options homepage info deps uses edit cat uninstall link unlink pin unpin'
+  # search 列的是**还没装**的 formula/cask，所以两个会改状态的动作都不能在这里：
+  # uninstall（对没装的包卸载）和 unpin（没装的东西无从 pin）。
+  # 两个入口都还在 —— manage 有 uninstall 与 unpin，pinned 也有。
+  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable），
+  # 列表不再进内存，每次回到列表重跑一次 brew formulae（约 0.1s）。
+  'brew:search:actions' 'install rollback options homepage info deps uses edit cat link unlink pin'
   'brew:search:cols'    '0'
 
   'brew:manage'         '_brewf_list_installed'

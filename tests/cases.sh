@@ -760,6 +760,144 @@ t_case_pkg_failure() {
   rm -f "$cnt" "$logf"
 }
 
+# 19. _pkg_read_rows：把查询输出收进 _PKG_ROWS
+#
+# 这里换掉了实现（原 while-read + arr+=()，O(n^2)），语义必须一模一样：
+#   - 空行丢掉
+#   - 末行没有换行也要收进来
+#   - 不改动行内容（tab 原样保留，那是 _pkg_display 的输入）
+#     回归点：曾经用 $(cat) slurp，命令替换会吃掉尾部换行，
+#     按行切完末尾多出一个空元素，不清掉就会变成一条空白候选。
+t_case_pkg_read_rows() {
+  local out
+  t_sep "常规输入：三行，含空行"
+  out=$(printf 'alpha\t1.0\n\nbeta\t2.0\n' | _pkg_read_rows; print -r -- "n=${#_PKG_ROWS} [${(j:,:)${_PKG_ROWS}}]")
+  print -r -- "  $out"
+  t_sep "末行无换行"
+  out=$(printf 'alpha\t1.0\nbeta' | _pkg_read_rows; print -r -- "n=${#_PKG_ROWS} [${(j:,:)${_PKG_ROWS}}]")
+  print -r -- "  $out"
+  t_sep "只有空行"
+  out=$(printf '\n\n' | _pkg_read_rows; print -r -- "n=${#_PKG_ROWS} [${(j:,:)${_PKG_ROWS}}]")
+  print -r -- "  $out"
+  t_sep "无输入"
+  out=$(printf '' | _pkg_read_rows; print -r -- "n=${#_PKG_ROWS}")
+  print -r -- "  $out"
+  t_sep "空行与首尾空白不是一回事：'  ' 要留着"
+  out=$(printf '  \nx\t\n' | _pkg_read_rows; print -r -- "n=${#_PKG_ROWS} [${(j:|:)${_PKG_ROWS}}]")
+  print -r -- "  $out"
+  _PKG_ROWS=()
+}
+
+# 20. 单列 + 无 mutating 动作的视图走流式路径
+#
+# 回归点（用户实测报出）：pnpmf -> search 一直不出候选，越等越久。
+# 重构后所有视图都先把整份列表读进 _PKG_ROWS，而 _pkg_read_rows 原来的
+# while-read + 数组 append 是 O(n^2)（8 万行 172s，翻一倍 4 倍）。
+# search 的数据源是 all-the-package-names，有 448 万行，于是 fzf
+# 在一个多小时里一个候选都收不到。重构前的 _fzf_search 是
+# `$available | _fzf_tmp_write`，也就是直接流进 fzf，所以是秒开。
+#
+# 断言三件事：候选内容与缓冲路径一致（取首字段 + 丢空行）、
+# _PKG_ROWS 全程为空、_pkg_display 一次都没被调用。
+t_case_pkg_stream() {
+  local cnt qcnt logf log
+  local k
+  local -a cand
+  local c
+  cnt=$(mktemp)
+  qcnt=$(mktemp)
+  logf=$(mktemp)
+  print -r -- 0 >"$cnt"
+  print -r -- 0 >"$qcnt"
+  : >"$logf"
+
+  functions[_pkg_read_orig]=$functions[_pkg_read]
+  functions[_pkg_display_orig]=$functions[_pkg_display]
+  _pkg_display() {
+    print -r -- '  *** 错误：流式视图不该调用 _pkg_display ***' >&2
+    cat
+  }
+  _pkg_read() {
+    local n
+    n=$(<"$cnt")
+    n=$(( n + 1 ))
+    print -r -- "$n" >"$cnt"
+    cand=("${(@f)$(cat)}")
+    cand=("${(@)cand:#}")
+    print -r -- "  fzf#$n 收到 ${#cand[@]} 个候选: ${(j:,:)cand}" >&2
+    (( ${#cand} == 0 )) && print -r -- '  *** 错误：第 '"$n"' 次调用没有候选 ***' >&2
+    case $n in
+      1) print -r -- 'alpha' ;;
+      2) print -r -- 'show' ;;
+      *) return 130 ;;
+    esac
+  }
+  # 计数器必须落文件：查询函数是在 _pkg_feed 的管道里跑的，出不了子 shell
+  _pkg_s_list() {
+    print -r -- $(( $(<"$qcnt") + 1 )) >"$qcnt"
+    printf 'alpha\t1.0\nbeta\t2.0\n\n'
+  }
+  _pkg_s_runner() { print -r -- "act=$1 pkg=[$2]" >>"$logf"; return 0 }
+  PKG+=(
+    's1:title'        'S1'
+    's1:views'        'search'
+    's1:search'       '_pkg_s_list'
+    's1:search:title' 'S1 Search'
+    's1:search:actions' 'install'
+    's1:search:cols'  '0'
+    # 唯一声明的 mutating 动作是 uninstall，而 search 的动作里没有它 ——
+    # 交集为空正是可流式的判据
+    's1:mutating'     'uninstall'
+    's1:loop'         'install'
+    's1:runner'       '_pkg_s_runner'
+  )
+
+  _pkg_session s1 search
+  log=$(<"$logf")
+  printf '  查询被调用 %s 次（2 = 列表 + 动作后回到列表）\n' "$(<"$qcnt")"
+  printf '  _PKG_ROWS 长度 %d（0 = 流式路径不缓冲）\n' "${#_PKG_ROWS}"
+  printf '  动作收到: %s\n' "${(j: :)${(f)log}}"
+  printf '  fzf 共被调用 %s 次（3 = 列表 + 子菜单 + 取消）\n' "$(<"$cnt")"
+
+  unfunction _pkg_read _pkg_display _pkg_s_list _pkg_s_runner
+  eval "_pkg_read() { $functions[_pkg_read_orig] }"
+  eval "_pkg_display() { $functions[_pkg_display_orig] }"
+  unfunction _pkg_read_orig _pkg_display_orig
+  for k in title views search search:title search:actions search:cols mutating loop runner; do
+    unset "PKG[s1:$k]"
+  done
+  rm -f "$cnt" "$qcnt" "$logf"
+
+  t_sep "流式分类：448 万行的 npm / pnpm search 必须判成可流式"
+  local key eco view how
+  local -a ecos parts
+  local bad=0
+  ecos=()
+  for key in "${(@k)PKG}"; do
+    parts=("${(@s.:.)key}")
+    (( ${#parts} == 2 )) || continue
+    [[ ${parts[2]} == title ]] || continue
+    ecos+=("${parts[1]}")
+  done
+  ecos=(${(u)ecos})
+  for eco in $ecos; do
+    for view in ${(s: :)$(_pkg_get $eco views)}; do
+      if _pkg_streamable "$eco" "$view"; then how=流式; else how=缓冲; fi
+      printf '  %-4s %s/%s\n' "$how" "$eco" "$view"
+    done
+  done
+  for view in npm/search pnpm/search; do
+    eco=${view%%/*}; view=${view#*/}
+    _pkg_streamable "$eco" "$view" || { bad=1; printf '  *** 错误：%s 判成缓冲，search 会重新变成 O(n^2) ***\n' "$eco/$view" }
+  done
+  # 多列视图必须留在缓冲路径：它们要宽度预扫描，cut -f1 给不了对齐
+  for view in npm/manage pnpm/outdated brew/manage gem/manage; do
+    eco=${view%%/*}; view=${view#*/}
+    _pkg_streamable "$eco" "$view" && { bad=1; printf '  *** 错误：%s 是多列视图，不该判成流式 ***\n' "$eco/$view" }
+  done
+  (( bad )) || printf '  OK 448 万行的 search 是流式，多列视图仍走缓冲'
+}
+
 # 17. pathf / envf 的取值与 --ansi
 #     回归点 1：envf 的行含对齐填充与颜色码，取值必须掐掉它们，且要取
 #     「首个字段之后的全部内容」而不是最后一个空白字段 —— 旧代码用
@@ -1014,10 +1152,12 @@ t_case_readme() {
   # 用 grep -w 取词本身，不要用字符类切分 —— 那样会把 "brew:" 、"(find"
   # 这种带分隔符的碎片当成词，报出一堆假的「代码用了 X」。
   # head / tail 不单列：head 只跟 find 一起用；tail 在 gem 里是变量名。
+  # cut 是流式 search 路径的一部分（见 _pkg_streamable），sed 是 pipf 抠 index 页
+  # 链接用的（87 万行，见 _pipf_list_available），两者都必须列进来。
   local -a used
   used=(${(u)${(s: :)$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh \
         | sed 's/[[:space:]]#.*$//' \
-        | grep -howE 'all-the-package-names|pip-autoremove|brew|npm|pnpm|pip3?|gem|gh|jq|curl|find|git|grep|sort|uniq|printenv|less|open|dirname' | tr 'A-Z' 'a-z' | sort -u)}})
+        | grep -howE 'all-the-package-names|pip-autoremove|brew|npm|pnpm|pip3?|gem|gh|jq|curl|find|git|grep|cut|sed|sort|uniq|printenv|less|open|dirname' | tr 'A-Z' 'a-z' | sort -u)}})
   for c in "${used[@]}"; do
     # 必须在**依赖表**里，即以 "| `" 开头的表格行。
     # 之前只查「README 任意位置提过」，于是散文里顺口提一句就能蒙混过关 ——
@@ -1145,6 +1285,8 @@ t_run_all() {
   t_case_pkg_keyshape
   t_case_pkg_action_menu
   t_case_pkg_failure
+  t_case_pkg_read_rows
+  t_case_pkg_stream
   t_case_other_tail
   t_case_envf_width
   t_case_readme

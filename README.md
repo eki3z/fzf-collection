@@ -72,8 +72,8 @@ beyond `fzf` at load time.
 | --- | --- |
 | all commands | `fzf` |
 | `brewf` | `brew`, `grep`. `git` only for `rollback`; `find` and `dirname` only for the `unpin` action |
-| `npmf`, `pnpmf` | `npm` / `pnpm`, `jq`, and `all-the-package-names` for `search` |
-| `pipf` | `pip` or `pip3`, `jq`, `curl` for `search`. `pip-autoremove` is offered as an extra action when installed |
+| `npmf`, `pnpmf` | `npm` / `pnpm`, `jq`, and `all-the-package-names` plus `cut` for `search` |
+| `pipf` | `pip` or `pip3`, `jq`, `curl` plus `grep` and `sed` for `search`. `pip-autoremove` is offered as an extra action when installed |
 | `gemf` | `gem` |
 | `ghf` | `gh`, authenticated. No external `jq` — `gh api --jq` is built in |
 | `pathf` | `find` with `-printf`, so GNU or Homebrew findutils, not BSD, plus `uniq` |
@@ -85,7 +85,9 @@ beyond `fzf` at load time.
 `rollback` for npm, pnpm and pip. Their `search` view does not use it.
 
 `pipf`'s `search` scrapes the index page that `pip config get
-global.index-url` points at, so it needs `curl` and network access.
+global.index-url` points at, so it needs `curl` and network access. The
+page holds 871,000 lines; the links are pulled out with `grep -o` and
+`sed` so that no shell loop ever walks them.
 
 Without `all-the-package-names`, `npmf` and `pnpmf` stop immediately with
 a message rather than running with a broken view. Everything else degrades
@@ -96,8 +98,15 @@ quietly: a missing `jq` leaves the affected views empty, and a missing
 
 Each `*-f` command picks a view, then picks an action, and loops: after
 an action runs, the finished rows are dropped from the in-memory list and
-the rest stays. The list is queried once per invocation and never
-re-queried, so nothing is written to disk.
+the rest stays. Nothing is ever written to disk.
+
+Most views hold the list in memory, query it once, and drop rows from it as
+actions finish. A view that lists every package name cannot: npm's and
+pnpm's `search` see 4.5 million names, and a shell loop over that many
+lines is quadratic, so the list would take hours to reach fzf. Those views
+have no action that removes rows, so they need no memory at all — the query
+streams into fzf through `cut` and `grep`, and it is re-run each time the
+view comes back. Either way nothing is written to disk.
 
 ### brewf
 

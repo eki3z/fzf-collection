@@ -140,7 +140,9 @@ PKG+=(
 
   'gem:search'         '_gemf_list_available'
   'gem:search:title'   'Gem Search'
-  'gem:search:actions' 'install uninstall rollback'
+  # search 列的是**还没装**的 gem，uninstall 在这里没有意义，入口只留在 manage。
+  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable）。
+  'gem:search:actions' 'install rollback'
   'gem:search:cols'    '0'
 
   'gem:manage'         '_gemf_list_installed'
