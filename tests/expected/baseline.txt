@@ -285,5 +285,6 @@ left-pad
 
 ===== 取值层：值为空的环境变量（不能用「是否为空」判存在性） =====
   OK   输出 [_ENVF_EMPTY_TEST_VAR = ]
+  (没有 README.md，跳过)
 
 ### END

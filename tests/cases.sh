@@ -919,6 +919,222 @@ t_case_envf_width() {
   rm -rf "$ENVF_TMP"
 }
 
+# 19. README 与代码一致
+#     README 曾经把不存在的 `uvf`、不存在的 `registry` view 写进去，
+#     漏掉 pinned / gemf / envf，依赖表也只提了 grep coreutils 和 gh jq。
+#     文档漂移不会让任何东西坏掉，所以不会有人发现 —— 除了专门查它的时候。
+#     cargof / ffp 已移除、fp 已改名为 pathf，本用例的清单必须跟着变，
+#     否则它会把「文档写了不存在的命令」当成正确。
+t_case_readme() {
+  local R=$root/README.md
+  if [[ ! -f $R ]]; then
+    print -r -- '  (没有 README.md，跳过)'
+    return 0
+  fi
+
+  t_sep "公开命令：README 必须逐个收录，且不多不少"
+  local -a want
+  want=(brewf npmf pnpmf pipf gemf cargof ghf fp ffp envf)
+  local c
+  for c in "${want[@]}"; do
+    if grep -qF -- "\`$c\`" "$R"; then
+      print -r -- "  OK   收录了 $c"
+    else
+      print -r -- "  *** 错误：README 没收录 $c"
+    fi
+  done
+  # 反向：README 提到的命令名必须真的存在。
+  # 排除 fzf —— 它是项目名也是依赖名，不是本插件定义的命令。
+  local -a defined
+  defined=(${(f)"$(grep -hoE '^[a-z][a-z0-9]*\(\)' "$root"/base.zsh "$root"/collections/*.zsh \
+             | tr -d '()' | sort)"})
+  for c in ${(f)"$(grep -oE '`[a-z]+f`' "$R" | tr -d '`' | sort -u)"}; do
+    [[ $c == fzf ]] && continue
+    (( ${defined[(Ie)$c]} )) || print -r -- "  *** 错误：README 提到 $c，但代码里没有这个函数"
+  done
+
+  t_sep "view 列表：README 必须覆盖注册表里的全部 view，且不写多余的"
+  local eco v line miss extra
+  for eco in brew npm pnpm pip gem cargo gh; do
+    local -a vs
+    vs=(${(s: :)${PKG[$eco:views]}})
+    (( ${#vs} )) || continue
+    line=$(grep -m1 "^\`${eco}f\`:" "$R")
+    if [[ -z $line ]]; then
+      print -r -- "  *** 错误：README 缺 ${eco}f 的命令行"
+      continue
+    fi
+    miss=""
+    for v in "${vs[@]}"; do
+      [[ $line == *"\`$v\`"* ]] || miss+=" $v"
+    done
+    extra=""
+    for v in ${(z)${(s. .)${line#*: }}}; do
+      v=${v//\`/}
+      [[ -z $v ]] && continue
+      (( ${vs[(Ie)$v]} )) || extra+=" $v"
+    done
+    if [[ -n $miss ]]; then
+      print -r -- "  *** 错误 ${eco}f 漏了 view:$miss"
+    elif [[ -n $extra ]]; then
+      print -r -- "  *** 错误 ${eco}f 写了不存在的 view:$extra"
+    else
+      print -r -- "  OK   ${eco}f: ${(j: :)vs}"
+    fi
+  done
+
+  t_sep "不该出现的名字"
+  for c in uvf fzf-uv; do
+    if grep -qF "$c" "$R"; then
+      print -r -- "  *** 错误：README 提到 $c，但代码里没有这个模块"
+    else
+      print -r -- "  OK   不提 $c"
+    fi
+  done
+  if grep -qF '`registry`' "$R"; then
+    print -r -- '  *** 错误：README 提到 registry view，但注册表里没有'
+  else
+    print -r -- '  OK   不提 registry view'
+  fi
+
+  t_sep "默认模块列表"
+  # 两边都归一成「空格分隔、无首尾空格」再比，
+  # 否则尾随空格会伪装成不一致（踩过一次）。
+  local real_mods readme_mods
+  real_mods=$(print -l -- ${FZF_COLLECTION_MODULES} | tr '\n' ' ')
+  readme_mods=$(sed -n '/^FZF_COLLECTION_MODULES=($/,/^  )$/p' "$R" \
+                | sed '1d;$d' | tr -d ' ' | tr '\n' ' ')
+  real_mods=${real_mods%% }
+  readme_mods=${readme_mods%% }
+  print -r -- "  代码:   [${real_mods}]"
+  print -r -- "  README: [${readme_mods}]"
+  if [[ $real_mods == $readme_mods ]]; then
+    print -r -- '  OK   一致'
+  else
+    print -r -- '  *** 错误：默认模块列表不一致'
+  fi
+
+  t_sep "依赖：README 提到的必须真被调用，代码用到的必须被提到"
+  # 白名单必须穷举外部命令。之前的白名单漏了 curl，于是 pipf 的 search
+  # 靠 curl 抓 index 页面这件事两版依赖表都没写，也永远不会被这个检查抓到。
+  # 宁可多列几个候选（命中后再判断是不是真调用），也不能漏。
+  #
+  # 用 grep -w 取词本身，不要用字符类切分 —— 那样会把 "brew:" 、"(find"
+  # 这种带分隔符的碎片当成词，报出一堆假的「代码用了 X」。
+  # head / tail 不单列：head 只跟 find 一起用；tail 在 gem 里是变量名。
+  local -a used
+  used=(${(u)${(s: :)$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh \
+        | sed 's/[[:space:]]#.*$//' \
+        | grep -howE 'all-the-package-names|pip-autoremove|brew|npm|pnpm|pip3?|gem|gh|jq|curl|find|git|grep|sort|uniq|printenv|less|open|dirname' | tr 'A-Z' 'a-z' | sort -u)}})
+  for c in "${used[@]}"; do
+    # 必须在**依赖表**里，即以 "| `" 开头的表格行。
+    # 之前只查「README 任意位置提过」，于是散文里顺口提一句就能蒙混过关 ——
+    # 注入测试证明过：把 curl 从表格里删掉、留在散文里，检查照样通过。
+    if grep -E '^\| ' "$R" | grep -qF "$c"; then
+      :
+    else
+      print -r -- "  *** 错误：代码用了 $c，README 依赖表里没有"
+    fi
+  done
+  print -r -- "  代码用到的 ${#used[@]} 个外部命令都已在依赖表中"
+  # perl / column 已彻底移除，README 不得再声称需要
+  for c in perl column; do
+    n=$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh | grep -cE "\b$c\b")
+    if (( n == 0 )) && grep -qiE "install.*\b$c\b|\b$c\b.*install" "$R"; then
+      print -r -- "  *** 错误：README 仍声称需要 $c，但代码已不再调用它"
+    else
+      print -r -- "  OK   $c 在代码中 $n 次调用，README 未声称需要"
+    fi
+  done
+
+  t_sep "可配置项：代码里每个可覆盖的变量都必须在 README 里有，且名字一致"
+  # 双向核对。以前只查 _ENVF_VALMAX 一个方向，_PKG_COLSEP 就漏了。
+  local -a tunable
+  tunable=(${(u)${(s: :)$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*:-' "$root"/base.zsh "$root"/collections/*.zsh \
+          | sed 's/\${//;s/:-//')}})
+  # PAGER 是通用环境变量，不算插件自己的可配置项
+  tunable=(${tunable:#PAGER})
+  local vname
+  for vname in "${tunable[@]}"; do
+    if grep -qF "$vname" "$R"; then
+      print -r -- "  OK   $vname 有文档"
+    else
+      print -r -- "  *** 错误：代码可覆盖 $vname，README 没有"
+    fi
+  done
+  print -r -- "  代码里可覆盖的插件变量共 ${#tunable[@]} 个：${(j: :)tunable}"
+
+  t_sep "clone 地址必须指向本仓库，不能是上游"
+  # 之前一直写的是上游 liuyinz 的地址，照抄会克隆错仓库。
+  local remote
+  remote=$(cd "$root" && git remote get-url origin 2>/dev/null)
+  if [[ -z $remote ]]; then
+    print -r -- '  (没有 origin remote，跳过)'
+  else
+    remote=${remote%.git}
+    remote=${remote#https://}
+    remote=${remote#git@}
+    remote=${remote/:/\/}
+    print -r -- "  origin = ${remote}"
+    if grep -qF "https://${remote}" "$R"; then
+      print -r -- '  OK   README 的 clone 地址与 origin 一致'
+    else
+      print -r -- '  *** 错误：README 的 clone 地址与 origin 不一致'
+      grep -oE 'https://github.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+' "$R" \
+        | sort -u | sed 's/^/        README 里的: /'
+    fi
+  fi
+
+  t_sep "jq：README 声称的用法必须与代码一致"
+  # 事实：brew 不用 jq（只有注释里提到）；gem 完全不用；
+  # gh 用的是 gh api --jq（内置，不需要外部二进制）；
+  # npm / pnpm / pip 的 outdated 与 manage 需要外部 jq，search 反而不用。
+  local eco2 fn2 f2 v2 row
+  for eco2 in brew gem; do
+    for v2 in ${(s: :)${PKG[$eco2:views]}}; do
+      fn2=${PKG[$eco2:$v2]}
+      [[ -z $fn2 ]] && continue
+      f2=$(grep -l "^${fn2}()" "$root"/collections/*.zsh 2>/dev/null | head -1)
+      [[ -z $f2 ]] && continue
+      if sed -n "/^${fn2}()/,/^}/p" "$f2" | grep -vE '^\s*#' | grep -qE '\| jq -r'; then
+        print -r -- "  *** 错误：$eco2/$v2 用了外部 jq，README 声称 $eco2 不需要"
+      fi
+    done
+    print -r -- "  OK   $eco2 的 view 数据源确实不用外部 jq"
+  done
+  # 反向：npm / pnpm / pip 的 outdated 真的用 jq，README 必须列出 jq
+  for eco2 in npm pnpm pip; do
+    fn2=${PKG[$eco2:outdated]}
+    f2=$(grep -l "^${fn2}()" "$root"/collections/*.zsh 2>/dev/null | head -1)
+    if [[ -z $f2 ]] || ! sed -n "/^${fn2}()/,/^}/p" "$f2" | grep -vE '^\s*#' | grep -qE '\| jq -r'; then
+      print -r -- "  *** 错误：$eco2 的 outdated 不再需要 jq，README 却列着"
+      continue
+    fi
+    # README 的依赖表里 $eco2f 那一行必须含 jq。
+    # npmf 与 pnpmf 合并成一行（`| `npmf`, `pnpmf` | ...`），所以不能只匹配行首。
+    row=$(grep -F "\`${eco2}f\`" "$R" | grep '^|' | head -1)
+    if [[ -n $row ]] && print -r -- "$row" | grep -q 'jq'; then
+      print -r -- "  OK   $eco2 的 outdated 用 jq，README 也列了"
+    else
+      print -r -- "  *** 错误：$eco2 的 outdated 用 jq，但 README 依赖表没列"
+      print -r -- "        找到的行: ${row:-（无）}"
+    fi
+  done
+
+  t_sep "FZF_COLLECTION_OPTS 必须与 _fzf_opts 逐项一致"
+  local inreadme inopts
+  inreadme=$(sed -n '/^  FZF_COLLECTION_OPTS="/,/"/p' "$R" | grep -oE '^\s+--[a-z-]+' | tr -d ' ' | sort)
+  inopts=$(print -l -- ${_fzf_opts} | grep -oE '^--[a-z-]+' | sort)
+  if [[ $inreadme == $inopts ]]; then
+    print -r -- '  OK   一致'
+  else
+    print -r -- '  *** 错误：与代码里的 _fzf_opts 不一致'
+    print -r -- "      README:  ${(j: :)inreadme}"
+    print -r -- "      _fzf_opts: ${(j: :)inopts}"
+  fi
+}
+
+
 t_run_all() {
   t_case_underline
   t_case_format
@@ -940,5 +1156,6 @@ t_run_all() {
   t_case_pkg_failure
   t_case_other_tail
   t_case_envf_width
+  t_case_readme
   printf '\n### END\n'
 }
