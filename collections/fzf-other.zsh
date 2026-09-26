@@ -99,24 +99,44 @@ envf() {
   # key / val 在下面的 while 循环里用；都在函数开头声明，
   # 循环体内的标量 local 会污染 stdout（zsh 5.9）。
   local header format rec line key val
+  # local 一次性声明完，别在后面重复 local（zsh 5.9 会往 stdout 打 NAME=值）。
+  local valmax=${_ENVF_VALMAX:-80}
   header="Env"
   format="general"
   # 用 NUL 分隔读，值里含换行时才不会被拆成两条记录。
   # zsh 的 read -d 能吃 NUL（read -r -d $'\0'），所以不需要 tr 或 perl。
   # 读进来后：换行压成空格（与旧实现一致），第一个 = 换成空格。
+  #
+  # 显示层把值截到 valmax 个字符。必须截 —— PATH 的值实测 1994 字符
+  # （run.sh 的 zsh -c 环境下；交互 shell 经 mise 重写后是 1464），
+  # 200 列终端放不下，FPATH / LS_COLORS / __MISE_ZSH_ACTIVATE_PATH
+  # 也都超屏宽。fzf 只能截断并横向滚动这些行，于是一行看着只剩尾部，
+  # 整个列表像是错位。fp 的值是「目录 + 文件名」，从没超宽，所以它不受影响 ——
+  # 这就是两个命令表现不同的原因。
+  #
+  # 截断只影响显示：选中后按 key 从环境重新取完整值（见管道末尾）。
   while IFS= read -r -d $'\0' rec; do
     rec=${rec//$'\n'/ }
     [[ $rec == *=* ]] || continue
-    print -r -- "${rec%%=*} ${rec#*=}"
+    key=${rec%%=*}
+    val=${rec#*=}
+    if (( ${#val} > valmax )); then
+      val="${val[1,$valmax]}..."
+    fi
+    print -r -- "$key $val"
   done < <(printenv --null) \
     | sort -u \
     | _fzf_format \
     | fzf "${_fzf_opts[@]}" --ansi --header "$(_fzf_underline "$header")" \
     | while IFS= read -r line; do
-        # 原来是 `perl -lane 'printf "%s = %s", $F[0], $F[$#F]'`。
-        # $F[$#F] 是最后一个空白字段，值里带空格就截断 —— PATH 里有
-        # "/Applications/VMware Fusion.app/..." 时只剩 "Fusion.app/..."。
-        # _fzf_tail 取的是「首个字段之后的全部内容」，把值完整带出来。
-        print -r -- "${line%%[[:space:]]*} = $(_fzf_tail "$line")"
+        # 显示行里的值已被截断，所以按 key 从环境重新取完整值。
+        key=${line%%[[:space:]]*}
+        # 用 parameters 判存在性，不能用「${(P)key} 是否为空」——
+        # 值为空的环境变量是合法的，那样判会错误地回退到已截断的显示值。
+        if (( ${+parameters[$key]} )); then
+          print -r -- "$key = ${(P)key}"
+        else
+          print -r -- "$key = $(_fzf_tail "$line")"
+        fi
       done
 }

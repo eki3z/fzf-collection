@@ -267,4 +267,23 @@ left-pad
 ===== fzf 调用必须带 --ansi（回归点 2） =====
   OK
 
+===== 显示层：候选行不得超屏宽 =====
+  最长行 131 字符，超 200 列的行 0 条
+  （截断上限由 _ENVF_VALMAX 控制，默认 80）
+  OK
+
+===== 取值层：显示被截，选中仍须输出完整值 =====
+  OK                           PATH 2562 字符逐字一致
+  OK                           FPATH 2039 字符逐字一致
+  OK                           LS_COLORS 1906 字符逐字一致
+  OK                           FZF_DEFAULT_OPTS 756 字符逐字一致
+  OK                           LUA_INIT 508 字符逐字一致
+  OK                           PWD 51 字符逐字一致
+  OK                           __MISE_ORIG_PATH 896 字符逐字一致
+  OK                           SHLVL 1 字符逐字一致
+  OK                           HOME 10 字符逐字一致
+
+===== 取值层：值为空的环境变量（不能用「是否为空」判存在性） =====
+  OK   输出 [_ENVF_EMPTY_TEST_VAR = ]
+
 ### END

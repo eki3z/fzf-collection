@@ -816,6 +816,109 @@ t_case_other_tail() {
   (( bad )) || print -r -- '  OK'
 }
 
+# 18. envf 的显示宽度与取值还原
+#     回归点：PATH 的值实测 1994 字符（另一次会话里 2562），是 200 列终端的
+#     10 倍以上，FPATH / LS_COLORS / __MISE_ZSH_ACTIVATE_PATH 同样超宽。
+#     fzf 只能截断并横向滚动这些行，一行看着只剩尾部，整个列表像错位。
+#     fp 的值是「目录 + 文件名」，从不满屏，所以 fp 不受影响 ——
+#     这就是两个命令表现不同的原因。
+#     显示截断后，选中必须仍输出完整值。
+t_case_envf_width() {
+  # 基准与被测必须同进程同时取：PATH 在子 shell 里会被 zsh/mise 改写，
+  # 跨进程比对毫无意义（曾因此把正确的实现误判成不一致）。
+  #
+  # 临时文件目录用 mktemp -d，不依赖 $root —— $root 只在 tests/run.sh 里定义，
+  # 单独 source 本文件调用某个 t_case_xxx 时它是空的。
+  local ESC=$'\e'
+  local ENVF_TMP
+  ENVF_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fzf-envf.XXXXXX") || return 1
+  typeset -A base
+  local r
+  while IFS= read -r -d $'\0' r; do
+    [[ $r == *=* ]] || continue
+    base[${r%%=*}]=${r#*=}
+  done < <(printenv --null)
+
+  t_sep "显示层：候选行不得超屏宽"
+  local probe=$ENVF_TMP/probe.$$
+  local longest over
+  fzf() { cat > "$probe"; return 0; }
+  # 必须让 envf 直接写文件，不能用 $(envf) 捕获 ——
+  # 桩把候选写进文件后，管道下游没有任何输出，envf 提前返回，
+  # 命令替换会与桩争抢同一个 probe 文件，结果两边都读不到。
+  envf >/dev/null 2>&1
+  if [[ -f $probe ]]; then
+    longest=$(awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }' "$probe")
+    over=$(awk 'length($0) > 200 { c++ } END { print c + 0 }' "$probe")
+    print -r -- "  最长行 ${longest} 字符，超 200 列的行 ${over} 条"
+    print -r -- "  （截断上限由 _ENVF_VALMAX 控制，默认 80）"
+    if (( longest <= 200 )); then
+      print -r -- '  OK'
+    else
+      print -r -- '  *** 错误：仍有超屏宽的行 ***'
+    fi
+  else
+    print -r -- '  (envf 没有产出候选，跳过)'
+  fi
+  rm -f "$probe"
+
+  t_sep "取值层：显示被截，选中仍须输出完整值"
+  # 桩：模拟「用户只选中了 key 这一行」，走 envf 真实的取值循环。
+  #
+  # 桩不能写成 `fzf() { while read l; ...; }` —— envf 的 fzf 在管道里，
+  # 桩函数的 while 会读到**函数自己的** stdin 而不是管道来的候选，什么都读不到
+  # （曾因此全部报「实际 0」）。正确做法是把候选先落到文件再挑。
+  #
+  # want / l / sel 必须在循环外声明 —— 循环体内的标量 local 会污染 stdout。
+  local want got l sel outf pick
+  for want in PATH FPATH LS_COLORS FZF_DEFAULT_OPTS LUA_INIT PWD \
+             __MISE_ORIG_PATH SHLVL HOME; do
+    [[ -n ${base[$want]:-} ]] || continue
+    outf=$ENVF_TMP/out.$$
+    pick=$ENVF_TMP/pick.$$
+    fzf() {
+      cat > "$pick"
+      # 剥色后按键名挑出那一行，模拟 fzf 选中后输出的内容
+      sed "s/$ESC\\[[0-9;]*m//g" "$pick" 2>/dev/null \
+        | while IFS= read -r sel; do
+            [[ ${sel%%[[:space:]]*} == $want ]] && { print -r -- "$sel"; break }
+          done
+      rm -f "$pick"
+    }
+    envf > "$outf" 2>/dev/null
+    got=$(<"$outf")
+    rm -f "$outf"
+    if [[ $got == "$want = ${base[$want]}" ]]; then
+      print -r -- "  OK   ${(l:24:: :)}$want ${#base[$want]} 字符逐字一致"
+    else
+      print -r -- "  *** 错误 $want：期望长度 $(( ${#want} + 3 + ${#base[$want]} ))，实际 ${#got}"
+    fi
+  done
+
+  t_sep "取值层：值为空的环境变量（不能用「是否为空」判存在性）"
+  export _ENVF_EMPTY_TEST_VAR=''
+  outf=$ENVF_TMP/out.$$
+  pick=$ENVF_TMP/pick.$$
+  fzf() {
+    cat > "$pick"
+    sed "s/$ESC\\[[0-9;]*m//g" "$pick" 2>/dev/null \
+      | while IFS= read -r sel; do
+          [[ ${sel%%[[:space:]]*} == _ENVF_EMPTY_TEST_VAR ]] && { print -r -- "$sel"; break }
+        done
+    rm -f "$pick"
+  }
+  envf > "$outf" 2>/dev/null
+  got=$(<"$outf")
+  rm -f "$outf"
+  if [[ $got == '_ENVF_EMPTY_TEST_VAR = ' ]]; then
+    print -r -- "  OK   输出 [${got}]"
+  else
+    print -r -- "  *** 错误：实际 [${got}]"
+  fi
+  unset _ENVF_EMPTY_TEST_VAR
+  rm -rf "$ENVF_TMP"
+}
+
 t_run_all() {
   t_case_underline
   t_case_format
@@ -836,5 +939,6 @@ t_run_all() {
   t_case_pkg_action_menu
   t_case_pkg_failure
   t_case_other_tail
+  t_case_envf_width
   printf '\n### END\n'
 }
