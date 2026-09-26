@@ -10,8 +10,13 @@ _fzf_exist() {
   command -v "$@" &>/dev/null
 }
 
+# $1=消息 $2=标签（是谁触发的，通常是包名）
+#
+# 标签必须显式传。原来这里回退到 $caller —— 那是旧驱动的自由变量，
+# 旧驱动删掉之后没有任何地方再给它赋值，于是单参调用会打出一个空标签
+# （"Rollback cancel.: "）。
 _fzf_msg() {
-  printf "\n\x1b[34m%s\x1b[0m: %s\n" ${2:-$caller} $1
+  printf "\n\x1b[34m%s\x1b[0m: %s\n" "${2:-fzf-collection}" "$1"
 }
 
 _fzf_pager() {
@@ -318,7 +323,7 @@ _pkg_rollback() {          # $1=eco $2=pkg
   _fzf_msg "${old:-Not-installed}" "$pkg"
   new=$(print -l -- ${(f)versions} | _pkg_read)
   if [[ -z $new ]]; then
-    _fzf_msg "Rollback cancel." && return 0
+    _fzf_msg "Rollback cancel." "$pkg" && return 0
   fi
   [[ $new == "$old" ]] && { print -n $'\nREINSTALL THE SAME VERSION after 2 seconds\n'; sleep 2 }
   # 第 3 个参数是回滚前的版本。多数 ecosystem 用不到（直接装新版本即可），
@@ -327,10 +332,61 @@ _pkg_rollback() {          # $1=eco $2=pkg
   "$(_pkg_get "$eco" version-install)" "$pkg" "$new" "$old"
 }
 
+# 对选中的一批包执行一个动作。
+#
+# 回归点（B9）：旧驱动写成 `gem uninstall ... && _fzf_tmp_shift "$f"`，循环里
+# 不看退出码 —— 一个包失败也继续跑完剩下的，而且失败的那个照样被移出列表，
+# 于是它从屏幕上消失了，但系统里还在，再也找不到。用户只能重查一次才知道。
+#
+# $4=1 表示这是 mutating 动作，此时遇到失败立刻停止（返回 1）；
+# 只读动作传 0 —— 失败不停止，因为只读动作没有改变任何状态，
+# 中止没有意义，「失败」也往往只是「没有结果」（例如 brew uses 查不到依赖）。
+#
+# 结果放进 _PKG_DONE / _PKG_FAILED，由 _pkg_session 决定要不要删行。
+_pkg_apply() {           # $1=eco $2=view $3=act $4=mutating?
+  local eco=$1 view=$2 act=$3 strict=$4 p name
+  _PKG_DONE=()
+  _PKG_FAILED=()
+  _PKG_RC=0
+  for p in "${(@f)_PKG_PICKED}"; do
+    # ${p%%$'\t'*} 取到的就是干净 name —— _pkg_display 把对齐填充放在
+    # 第一个 tab 之后，所以这里不需要额外剥空格
+    name=${p%%$'\t'*}
+    if _pkg_act "$eco" "$view" "$act" "$name"; then
+      _PKG_DONE+=("$name")
+      print
+    else
+      # 退出码必须第一个取：下面追加数组就会清掉 $?
+      _PKG_RC=$?
+      _PKG_FAILED+=("$name")
+      (( strict )) && return 1
+    fi
+  done
+  return 0
+}
+
+# 动作失败后的汇总。写清楚哪一项失败、后面的没做、成功几项，
+# 这样用户知道列表里剩下的东西是什么状态。
+_pkg_report() {          # $1=act
+  print -r -- ""
+  # 130 = 128 + SIGINT。下载 formulae 时 Ctrl-C 是很常见的操作，
+  # 说成「失败」会让用户以为包坏了，而实际上什么都没变。
+  if (( _PKG_RC == 130 )); then
+    print -r -- "  ${_PKG_FAILED[1]}: 动作 '$1' 被 Ctrl-C 中断，已停止"
+  else
+    print -r -- "  ${_PKG_FAILED[1]}: 动作 '$1' 失败（退出码 $_PKG_RC），已停止"
+  fi
+  (( ${#_PKG_DONE} )) && print -r -- "  已完成 ${#_PKG_DONE} 项并移出列表"
+  print -r -- "  其余 ${_PKG_PENDING} 项未执行，仍在列表里"
+}
+
 # view 循环：整个 session 只查询一次，动作后从内存删行，不重查、不落盘。
 _pkg_session() {           # $1=eco $2=view
   local eco=$1 view=$2 sel act p
+  local -i strict
   local -a picked mutating loop opt
+  typeset -ga _PKG_PICKED _PKG_DONE _PKG_FAILED
+  typeset -gi _PKG_PENDING _PKG_RC
 
   header=$(_pkg_view_get "$eco" "$view" title)
   [[ -n $header ]] || header=$(_pkg_get "$eco" title)
@@ -353,23 +409,33 @@ _pkg_session() {           # $1=eco $2=view
     # 是非法语法，且只在运行时才报 bad substitution —— zsh -n 检查不出来。
     picked=("${(@f)sel}")
     (( ${#picked} )) || continue
+    _PKG_PICKED=("${picked[@]}")
 
     # 内层：动作菜单。非 mutating 且在 loop 列表中的动作会留在原地，
     # 沿用旧驱动「同一选择可连续执行多个只读动作」的行为。
     while :; do
       act=$(_pkg_actions "$eco" "$view") || break
       [[ -n $act ]] || break
-      # ${p%%$'\t'*} 取到的就是干净 name —— _pkg_display 把对齐填充放在
-      # 第一个 tab 之后，所以这里不需要额外剥空格
-      for p in $picked; do
-        _pkg_act "$eco" "$view" "$act" "${p%%$'\t'*}"
-        print
-      done
-      if (( ${mutating[(Ie)$act]} )); then
-        for p in $picked; do _pkg_drop "${p%%$'\t'*}"; done
-        break
+
+      strict=0
+      (( ${mutating[(Ie)$act]} )) && strict=1
+
+      if _pkg_apply "$eco" "$view" "$act" "$strict"; then
+        # 全部成功
+        if (( strict )); then
+          for p in "${_PKG_DONE[@]}"; do _pkg_drop "$p"; done
+          break
+        fi
+        (( ${loop[(Ie)$act]} )) || break
+        continue
       fi
-      (( ${loop[(Ie)$act]} )) || break
+
+      # 只有 mutating 动作会走到这里。成功的那几个已经生效，必须移出列表，
+      # 否则用户会以为它们还在；失败项与未执行项保持原样，可直接重试。
+      for p in "${_PKG_DONE[@]}"; do _pkg_drop "$p"; done
+      _PKG_PENDING=$(( ${#_PKG_PICKED} - ${#_PKG_DONE} - ${#_PKG_FAILED} ))
+      _pkg_report "$act"
+      break
     done
   done
 }

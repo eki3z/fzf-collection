@@ -50,9 +50,9 @@ my
 
 [34mmypkg[0m: some message
 
-===== 无 pkg（回退到 caller） =====
+===== 无 pkg：回退到固定标签，不再依赖 $caller =====
 
-[34mMYFUNC[0m: another message
+[34mfzf-collection[0m: another message
 
 ===== 在 zpf_manage 上下文中 =====
 zpf_manage:1: command not found: _fzf_header
@@ -224,5 +224,32 @@ left-pad
   fzf#4 候选 2 个: alpha , beta
   fzf 共被调用 4 次（4 = 列表 + 子菜单 + 回子菜单 + 取消）
   剩余行数 2（show 在 loop 里不该删行，应为 2）
+
+===== mutating 中途失败：立刻停止、只删成功项、失败项可重试 =====
+
+
+  b: 动作 'go' 失败（退出码 1），已停止
+  已完成 1 项并移出列表
+  其余 2 项未执行，仍在列表里
+  runner 收到 2 次调用: go a go b
+  DONE=a  FAILED=b  未执行=2
+  剩余 3 行: b c d
+
+===== mutating 全部成功：全部移出列表 =====
+
+
+
+
+  剩余 0 行: （应为 0）
+
+===== 只读动作返回非零：不中止、不删行 =====
+  runner 收到 4 次调用（4 = 没提前中止）
+  剩余 4 行: a b c d（应为 4）
+
+===== 退出码 130（Ctrl-C）：措辞与普通失败不同 =====
+
+  a: 动作 'go' 被 Ctrl-C 中断，已停止
+  其余 3 项未执行，仍在列表里
+  剩余 4 行: a b c d（应为 4，什么都没改成）
 
 ### END

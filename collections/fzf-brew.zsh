@@ -145,7 +145,7 @@ _brewf_rollback() {          # $1=pkg
   new=$(print -l -- ${(f)"$(_brewf_version_list "$pkg")"} \
     | _pkg_read --tiebreak=index --query="$pkg")
   if [[ -z $new ]]; then
-    _fzf_msg "Rollback cancel." && return 0
+    _fzf_msg "Rollback cancel." "$pkg" && return 0
     return 0
   fi
   # 旧 _fzf_read 末尾有 `perl -lane 'print $F[0]'`，把整行压成第一个词。

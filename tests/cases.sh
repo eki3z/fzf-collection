@@ -72,10 +72,12 @@ other-pkg 2.0.0"
 }
 
 # 4. _fzf_msg：消息输出格式
+#    标签必须显式传。原来回退到 $caller —— 那是旧驱动的自由变量，
+#    旧驱动删掉后无人赋值，单参调用会打出一个空标签。
 t_case_msg() {
   t_sep "有 pkg"
   _fzf_msg "some message" "mypkg"
-  t_sep "无 pkg（回退到 caller）"
+  t_sep "无 pkg：回退到固定标签，不再依赖 \$caller"
   caller="MYFUNC"
   _fzf_msg "another message"
 }
@@ -602,6 +604,151 @@ t_case_pkg_action_menu() {
   rm -f "$cnt" "$logf"
 }
 
+# 18. 动作失败的处理（B9）
+#
+# 回归点：旧驱动的循环不看退出码 —— 一个包失败也继续跑完剩下的，
+# 而且失败的那个照样被移出列表，于是它从屏幕上消失了但系统里还在。
+# 现在 mutating 动作遇到失败立刻停止，只把成功的移出列表，并打印汇总；
+# 只读动作不中止，因为它没有改变任何状态，「失败」往往只是「没有结果」。
+t_case_pkg_failure() {
+  local cnt logf line n log
+  local k runner
+  local -a rows
+  typeset -g SEL_ACT
+  cnt=$(mktemp)
+  logf=$(mktemp)
+
+  _pkg_p4_list() { printf 'a\t1\nb\t2\nc\t3\nd\t4\n' }
+  # 第 2 个包失败，其余成功
+  _pkg_p4_fail_second() {
+    print -r -- "$*" >>"$logf"
+    [[ $2 == b ]] && return 1
+    return 0
+  }
+  _pkg_p4_always_ok()  { print -r -- "$*" >>"$logf"; return 0 }
+  _pkg_p4_always_err() { print -r -- "$*" >>"$logf"; return 1 }
+  # 128 + SIGINT：brew 下载 formulae 时被 Ctrl-C 掉就是这个退出码
+  _pkg_p4_interrupt()  { print -r -- "$*" >>"$logf"; return 130 }
+
+  functions[_pkg_read_orig]=$functions[_pkg_read]
+  # 计数器落文件：_pkg_read 在 $(...) 子 shell 里被调用，变量出不去
+  _pkg_read() {
+    local n
+    n=$(<"$cnt")
+    n=$(( n + 1 ))
+    print -r -- "$n" >"$cnt"
+    cat >/dev/null
+    case $n in
+      1) print -r -- $'a\t1\nb\t2\nc\t3\nd\t4' ;;
+      2) print -r -- "$SEL_ACT" ;;
+      *) return 130 ;;
+    esac
+  }
+
+  t_sep "mutating 中途失败：立刻停止、只删成功项、失败项可重试"
+  runner=_pkg_p4_fail_second
+  SEL_ACT=go
+  PKG+=(
+    'p4:title'  'P4'
+    'p4:views'  'manage'
+    'p4:manage' '_pkg_p4_list'
+    'p4:manage:title'   'P4 Manage'
+    'p4:manage:actions' 'go peek'
+    'p4:manage:cols'    '0'
+    'p4:mutating' 'go'
+    'p4:loop'     'peek'
+    'p4:runner'   "$runner"
+  )
+  print -r -- 0 >"$cnt"
+  : >"$logf"
+  _pkg_session p4 manage
+  log=$(<"$logf")
+  print -r -- "  runner 收到 ${#${(f)log}} 次调用: ${(j: :)${(f)log}}"
+  print -r -- "  DONE=${(j: :)_PKG_DONE}  FAILED=${(j: :)_PKG_FAILED}  未执行=${_PKG_PENDING}"
+  rows=()
+  for line in "${_PKG_ROWS[@]}"; do rows+=("${line%%	*}"); done
+  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}"
+  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+    unset "PKG[p4:$k]"
+  done
+
+  t_sep "mutating 全部成功：全部移出列表"
+  SEL_ACT=go
+  PKG+=(
+    'p4:title'  'P4'
+    'p4:views'  'manage'
+    'p4:manage' '_pkg_p4_list'
+    'p4:manage:title'   'P4 Manage'
+    'p4:manage:actions' 'go peek'
+    'p4:manage:cols'    '0'
+    'p4:mutating' 'go'
+    'p4:loop'     'peek'
+    'p4:runner'   '_pkg_p4_always_ok'
+  )
+  print -r -- 0 >"$cnt"
+  : >"$logf"
+  _pkg_session p4 manage
+  rows=()
+  for line in "${_PKG_ROWS[@]}"; do rows+=("${line%%	*}"); done
+  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 0）"
+  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+    unset "PKG[p4:$k]"
+  done
+
+  t_sep "只读动作返回非零：不中止、不删行"
+  SEL_ACT=peek
+  PKG+=(
+    'p4:title'  'P4'
+    'p4:views'  'manage'
+    'p4:manage' '_pkg_p4_list'
+    'p4:manage:title'   'P4 Manage'
+    'p4:manage:actions' 'go peek'
+    'p4:manage:cols'    '0'
+    'p4:mutating' 'go'
+    'p4:loop'     'peek'
+    'p4:runner'   '_pkg_p4_always_err'
+  )
+  print -r -- 0 >"$cnt"
+  : >"$logf"
+  _pkg_session p4 manage
+  log=$(<"$logf")
+  print -r -- "  runner 收到 ${#${(f)log}} 次调用（4 = 没提前中止）"
+  rows=()
+  for line in "${_PKG_ROWS[@]}"; do rows+=("${line%%	*}"); done
+  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 4）"
+  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+    unset "PKG[p4:$k]"
+  done
+
+  t_sep "退出码 130（Ctrl-C）：措辞与普通失败不同"
+  SEL_ACT=go
+  PKG+=(
+    'p4:title'  'P4'
+    'p4:views'  'manage'
+    'p4:manage' '_pkg_p4_list'
+    'p4:manage:title'   'P4 Manage'
+    'p4:manage:actions' 'go peek'
+    'p4:manage:cols'    '0'
+    'p4:mutating' 'go'
+    'p4:loop'     'peek'
+    'p4:runner'   '_pkg_p4_interrupt'
+  )
+  print -r -- 0 >"$cnt"
+  : >"$logf"
+  _pkg_session p4 manage
+  rows=()
+  for line in "${_PKG_ROWS[@]}"; do rows+=("${line%%	*}"); done
+  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 4，什么都没改成）"
+  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+    unset "PKG[p4:$k]"
+  done
+
+  eval "_pkg_read() { $functions[_pkg_read_orig] }"
+  unfunction _pkg_read_orig _pkg_p4_list _pkg_p4_fail_second \
+              _pkg_p4_always_ok _pkg_p4_always_err _pkg_p4_interrupt
+  rm -f "$cnt" "$logf"
+}
+
 t_run_all() {
   t_case_underline
   t_case_format
@@ -620,5 +767,6 @@ t_run_all() {
   t_case_pkg_registry
   t_case_pkg_keyshape
   t_case_pkg_action_menu
+  t_case_pkg_failure
   printf '\n### END\n'
 }
