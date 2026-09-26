@@ -68,7 +68,10 @@ _brewf_switch() {
         edit)
           $EDITOR "$(brew formula "$f")"
           ;;
-        upgrade | uninstall | untap | unpin)
+        upgrade)
+          _brewf upgrade --yes "$f" && _fzf_tmp_shift "$f"
+          ;;
+        uninstall | untap | unpin)
           _brewf "$subcmd" "$f" && _fzf_tmp_shift "$f"
           ;;
         uses)
