@@ -2,7 +2,7 @@
 # 上面这行是文件元数据（供编辑器与格式化工具识别），不是解释器指令。
 # 本文件是库文件，由 fzf-collection.plugin.zsh 以 source 方式加载。
 # 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
-# 且缺少 base.sh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
+# 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
 
 # [F]ind [P]ath
 # option -d return executable path

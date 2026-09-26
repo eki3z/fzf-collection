@@ -32,8 +32,8 @@ if [ -z "$FZF_COLLECTION_MODULES" ]; then
   )
 fi
 
-source "${0:h:A}/base.sh"
+source "${0:h:A}/base.zsh"
 
 for f in "${FZF_COLLECTION_MODULES[@]}"; do
-  source "${0:h:A}/collections/fzf-${f}.sh"
+  source "${0:h:A}/collections/fzf-${f}.zsh"
 done

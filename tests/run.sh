@@ -6,7 +6,11 @@
 #   tests/run.sh              跑测试并与 tests/expected/baseline.txt 比对
 #   tests/run.sh --record     用当前行为重新记录基线（仅在行为有意变更时使用）
 #   tests/run.sh --syntax     只跑 zsh -n 语法门
+#   tests/run.sh --local      只跑「循环体内标量 local」lint
 #   tests/run.sh --perms      只检查 body 文件在 git 索引中的模式
+#
+# 已知：zsh -n 只查语法，查不出「循环体内的标量 local 会往 stdout 打一行
+# NAME=值」这类污染。--local 那道门就是为它准备的。
 #
 # 为什么基线由 zsh 记录：body 由 plugin.zsh 以 source 加载，解析者是 zsh，
 # 当前行为即基线。重构目标是「行为等价」，因此基线必须在改动前录下。
@@ -22,7 +26,7 @@ trap 'rm -rf "$outdir"' EXIT
 syntax_gate() {
   local f rc=0
   print -r -- "--- zsh -n 语法门 ---"
-  for f in "$root"/base.sh "$root"/collections/*.sh "$root"/tests/cases.sh; do
+  for f in "$root"/base.zsh "$root"/collections/*.zsh "$root"/tests/cases.sh; do
     if zsh -n "$f" 2>&1; then
       print -r -- "  OK   ${f:t}"
     else
@@ -37,7 +41,7 @@ perms_gate() {
   print -r -- "--- git 索引中的文件模式（应全部 100644）---"
   local line rc=0 fmode fpath_
   # 注意：不要用 path / fpath / cdpath / manpath 作变量名 —— 它们是 zsh 的特殊变量
-  for line in ${(f)"$(git -C "$root" ls-files -s base.sh collections/ fzf-collection.plugin.zsh)"}; do
+  for line in ${(f)"$(git -C "$root" ls-files -s base.zsh collections/ fzf-collection.plugin.zsh)"}; do
     fmode=${line%% *}
     fpath_=${line#*$'\t'}
     if [[ $fmode == 100644 ]]; then
@@ -50,10 +54,65 @@ perms_gate() {
   return $rc
 }
 
-# 与 plugin.zsh 相同的加载方式：source base.sh，再 source 用例
+# 静态 lint：禁止把标量 local 写在循环体内。
+#
+# 回归点：zsh 5.9 在循环体内执行标量 local 时，会往 stdout 打一行
+# `NAME=<上一轮的值>`（含 ESC 的值显示成 $'\C-...'）。body 里几乎所有
+# 函数的 stdout 都会被 $(...) 或管道捕获，那一行就会变成一条假数据 ——
+# 曾经表现为 pnpmf 的候选列表里混入 k=6 / k=''。zsh -n 查不出这个。
+#
+# 为什么这条门不可省：在循环里写 local 是很自然、很常见的写法，
+# 而症状要等用户在 fzf 列表里看到多出一行才暴露。
+local_gate() {
+  print -r -- "--- lint: 循环体内不得有标量 local ---"
+  local f rc=0 n
+  for f in "$root"/base.zsh "$root"/collections/*.zsh; do
+    n=$(awk '
+      { line = $0; sub(/\r$/, "", line)
+        if (line ~ /^[ \t]*#/ || line ~ /^[ \t]*$/) next
+        work = line; gsub(/\t/, "        ", work)
+        ind = match(work, /[^ ]/) - 1
+        s = line; sub(/^[ \t]+/, "", s)
+
+        if (s ~ /^(local|typeset)[ \t]+/) {
+          rest = s; sub(/^(local|typeset)[ \t]+/, "", rest)
+          isarr = (rest ~ /(^|[ \t])-[aA]([ \t]|$)/)
+          hasname = 0
+          nt = split(rest, tok, /[ \t]+/)
+          for (i = 1; i <= nt; i++) if (tok[i] != "" && tok[i] !~ /^-/) hasname = 1
+          inloop = 0
+          for (i = top; i >= 1; i--)
+            if (kind[i] == "loop" && lind[i] < ind) { inloop = 1; break }
+          if (inloop && !isarr && hasname)
+            printf("  FAIL %s:%d  %s\n", FILENAME, FNR, s)
+        }
+
+        if (s ~ /^done([ \t]*;)?$/) { if (top >= 1 && kind[top] == "loop") top--; next }
+        if (s ~ /^\}([ \t]*;)?$/)  { if (top >= 1 && kind[top] == "func") top--; next }
+        if (s ~ /^(for|while|until|select|repeat)([ \t]|$)/ || s ~ /^do$/) {
+          top++; kind[top] = "loop"; lind[top] = ind; next
+        }
+        if (s ~ /^[A-Za-z_][A-Za-z0-9_.:-]*[ \t]*\([ \t]*\)[ \t]*\{?$/) {
+          top++; kind[top] = "func"; lind[top] = ind; next
+        }
+      }
+    ' "$f")
+    if [[ -n $n ]]; then
+      print -r -- "$n"
+      print -r -- "       ^ 提到函数开头；循环体内的 local 会把 NAME=值 打进 stdout"
+      rc=1
+    else
+      print -r -- "  OK   ${f:t}"
+    fi
+  done
+  return $rc
+}
+
+# 与真实加载路径一致：source plugin.zsh（它会加载 base.sh 与各 collection），
+# 这样用例能看到完整的注册表。
 run_cases() {
   ( cd "$root" && zsh -c '
-      source ./base.sh || exit 1
+      source ./fzf-collection.plugin.zsh || exit 1
       source ./tests/cases.sh || exit 1
       t_run_all
     ' 2>&1 )
@@ -64,8 +123,9 @@ case ${1:-} in
   --record)  mode=record ;;
   --syntax)  mode=syntax ;;
   --perms)   mode=perms ;;
+  --local)   mode=local ;;
   '')        mode=compare ;;
-  -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *)         print -ru2 "未知参数: $1"; exit 2 ;;
 esac
 
@@ -76,6 +136,10 @@ case $mode in
     ;;
   perms)
     perms_gate
+    exit $?
+    ;;
+  local)
+    local_gate
     exit $?
     ;;
   record)
@@ -90,6 +154,8 @@ esac
 fail=0
 
 syntax_gate || fail=1
+print
+local_gate || fail=1
 print
 perms_gate || fail=1
 print
