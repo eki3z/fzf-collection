@@ -923,7 +923,7 @@ t_case_envf_width() {
 #     README 曾经把不存在的 `uvf`、不存在的 `registry` view 写进去，
 #     漏掉 pinned / gemf / envf，依赖表也只提了 grep coreutils 和 gh jq。
 #     文档漂移不会让任何东西坏掉，所以不会有人发现 —— 除了专门查它的时候。
-#     cargof / ffp 已移除、fp 已改名为 pathf，本用例的清单必须跟着变，
+#     cargof 已移除，本用例的清单必须跟着变，
 #     否则它会把「文档写了不存在的命令」当成正确。
 t_case_readme() {
   local R=$root/README.md
@@ -934,7 +934,7 @@ t_case_readme() {
 
   t_sep "公开命令：README 必须逐个收录，且不多不少"
   local -a want
-  want=(brewf npmf pnpmf pipf gemf cargof ghf fp ffp envf)
+  want=(brewf npmf pnpmf pipf gemf ghf fp ffp envf)
   local c
   for c in "${want[@]}"; do
     if grep -qF -- "\`$c\`" "$R"; then
@@ -955,7 +955,7 @@ t_case_readme() {
 
   t_sep "view 列表：README 必须覆盖注册表里的全部 view，且不写多余的"
   local eco v line miss extra
-  for eco in brew npm pnpm pip gem cargo gh; do
+  for eco in brew npm pnpm pip gem gh; do
     local -a vs
     vs=(${(s: :)${PKG[$eco:views]}})
     (( ${#vs} )) || continue

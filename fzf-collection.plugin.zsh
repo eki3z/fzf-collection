@@ -26,7 +26,6 @@ if [ -z "$FZF_COLLECTION_MODULES" ]; then
     pnpm
     pip
     gem
-    cargo
     gh
     other
   )

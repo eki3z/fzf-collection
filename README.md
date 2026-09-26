@@ -19,7 +19,6 @@ A collection of commands to enhance commandline with [FZF](https://github.com/ju
     - [pnpmf](#pnpmf)
     - [pipf](#pipf)
     - [gemf](#gemf)
-    - [cargof](#cargof)
     - [ghf](#ghf)
     - [pathf](#pathf)
     - [ffp](#ffp)
@@ -77,7 +76,6 @@ beyond `fzf` at load time.
 | `npmf`, `pnpmf` | `npm` / `pnpm`, `jq`, and `all-the-package-names` for `search` |
 | `pipf` | `pip` or `pip3`, `jq`, `curl` for `search`. `pip-autoremove` is offered as an extra action when installed |
 | `gemf` | `gem` |
-| `cargof` | `cargo`. `jq` for parsing `cargo tree` |
 | `ghf` | `gh`, authenticated. No external `jq` — `gh api --jq` is built in |
 | `pathf` | `find` with `-printf`, so GNU or Homebrew findutils, not BSD, plus `uniq` |
 | `ffp` | `ripgrep`, plus `rev` and `cut` |
@@ -131,13 +129,6 @@ it was.
 
 `gemf`: `outdated` `search` `manage`
 
-### cargof
-
-`cargof`: `outdated` `manage`
-
-`cargo` has no search API, so there is no `search` view. Dependencies
-come from `cargo tree`.
-
 ### ghf
 
 `ghf`: `repos`
@@ -173,7 +164,6 @@ FZF_COLLECTION_MODULES=(
   pnpm
   pip
   gem
-  cargo
   gh
   other
   )

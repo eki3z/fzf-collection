@@ -183,14 +183,14 @@ left-pad
 ===== 单选 =====
   n=1 name=[only one]
 
-===== 注册表自洽性（7 个 ecosystem） =====
+===== 注册表自洽性（6 个 ecosystem） =====
   _pkg_rollback 读的数据键：version-list version-current version-install
   OK 无碰撞，派发目标全部存在
   每个 view 都声明了 title/actions/cols 的：是
-  已登记的 ecosystem：gem pip cargo brew npm pnpm gh
+  已登记的 ecosystem：gem pip brew npm pnpm gh
 
 ===== 键形状：每个三段键的第二段 X 必须有 PKG[<eco>:X:title] =====
-  OK 全部 7 个 ecosystem 的三段键顺序一致
+  OK 全部 6 个 ecosystem 的三段键顺序一致
 
 ===== 驱动解析：每个 view 的动作清单都非空（回车必须有子菜单） =====
   OK   gem/outdated     5 个动作
@@ -199,8 +199,6 @@ left-pad
   OK   pip/outdated     6 个动作
   OK   pip/search       3 个动作
   OK   pip/manage       6 个动作
-  OK   cargo/outdated   5 个动作
-  OK   cargo/manage     5 个动作
   OK   brew/outdated   10 个动作
   OK   brew/search     14 个动作
   OK   brew/manage     13 个动作
