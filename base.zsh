@@ -41,20 +41,6 @@ _fzf_underline() {
   printf -- '▔%.0s' {1..$#1}
 }
 
-# 取每行的第一个空白分隔字段。原来是 `| perl -lane 'print $F[0]'` ——
-# perl 的 -a 按 /\s+/ 自动分词，且会丢掉分词产生的空首元素，
-# 所以前导空白不会让结果变成空串。zsh 侧必须先剥前导空白再切，
-# 直接 ${line%%[[:space:]]*} 会把「  有缩进」这种行切成空。
-_fzf_read() {
-  local line
-  fzf "${_fzf_opts[@]}" --header "$(_fzf_underline "$header")" "$@" \
-    | while IFS= read -r line; do
-        while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
-        print -r -- "${line%%[[:space:]]*}"
-      done
-  return $pipestatus[1]
-}
-
 _fzf_homepage() {
   if [ -n "$1" ]; then
     echo "Open: $1 ..."

@@ -58,36 +58,28 @@ t_case_format() {
   print -r -- "  (以上应为空)"
 }
 
-# 3. _fzf_read：fzf 非交互模式（--filter）
-#    已知缺陷 B1：base.sh:48 的 perl -lane 'print $F[0]' 按空白切分，
-#    多词条目只剩第一个词。此处固化该行为，重构后应变为返回完整行。
-#    已知缺陷 B11：_fzf_read 结尾是 `fzf | perl`，perl 恒返回 0，
-#    因此 _fzf_read 永远返回 0，调用方无法据此检测「用户取消」。
+# 3. _pkg_read：fzf 非交互模式（--filter）与退出码透传
+#    这一条原本测的是 _fzf_read（缺陷 B1 / B11）。ffp 移除后 _fzf_read
+#    零调用者，已随之删除，但它承载的 B11 知识不能丢：
+#      旧 _fzf_read 结尾是 `fzf | perl`，perl 恒返回 0，于是它永远返回 0，
+#      调用方无法区分「用户选中」与「用户取消」。
+#    _pkg_read 不管道任何东西，直接透传 $?，所以 B11 在这里已修。
+#    保留这个用例是为了让「退出码必须透传」不再退化 —— 调用方靠它 break 循环。
 t_case_read() {
-  local input
   _fzf_opts=()
   header="Test"
 
-  t_sep "单条"
-  input="alpha one
-beta two
-gamma three"
-  printf '%s\n' "$input" | _fzf_read --filter=bet
-
-  t_sep "多词条目被截断（缺陷 B1 的证据）"
-  input="my package 1.0.0
-other-pkg 2.0.0"
-  printf '%s\n' "$input" | _fzf_read --filter=my
-
   t_sep "退出码：匹配时"
-  printf 'alpha\nbeta\n' | _fzf_read --filter=alp >/dev/null
-  printf '  退出码=%s\n' "$?"
+  printf 'alpha\nbeta\n' | _pkg_read --filter=alp >/dev/null
+  print -r -- "  _pkg_read 退出码=$?"
+  printf 'alpha\nbeta\n' | fzf --filter=alp >/dev/null
+  print -r -- "  fzf 裸调用  退出码=$?   ← 两者必须一致"
 
-  t_sep "退出码：无匹配（缺陷 B11 —— fzf 的 1 被 perl 吞掉）"
-  printf 'alpha\nbeta\n' | _fzf_read --filter=zzzz >/dev/null
-  printf '  _fzf_read 退出码=%s   ← 恒为 0，调用方无法检测取消\n' "$?"
+  t_sep "退出码：无匹配时必须透传 fzf 的 1（缺陷 B11 的回归点）"
+  printf 'alpha\nbeta\n' | _pkg_read --filter=zzzz >/dev/null
+  print -r -- "  _pkg_read 退出码=$?   ← 必须是 1，不能恒为 0"
   printf 'alpha\nbeta\n' | fzf --filter=zzzz >/dev/null
-  printf '  对照 fzf 裸调用退出码=%s\n' "$?"
+  print -r -- "  fzf 裸调用  退出码=$?"
 }
 
 # 4. _fzf_msg：消息输出格式
@@ -923,7 +915,7 @@ t_case_envf_width() {
 #     README 曾经把不存在的 `uvf`、不存在的 `registry` view 写进去，
 #     漏掉 pinned / gemf / envf，依赖表也只提了 grep coreutils 和 gh jq。
 #     文档漂移不会让任何东西坏掉，所以不会有人发现 —— 除了专门查它的时候。
-#     cargof 已移除，本用例的清单必须跟着变，
+#     cargof / ffp 已移除，本用例的清单必须跟着变，
 #     否则它会把「文档写了不存在的命令」当成正确。
 t_case_readme() {
   local R=$root/README.md
@@ -934,7 +926,7 @@ t_case_readme() {
 
   t_sep "公开命令：README 必须逐个收录，且不多不少"
   local -a want
-  want=(brewf npmf pnpmf pipf gemf ghf fp ffp envf)
+  want=(brewf npmf pnpmf pipf gemf ghf fp envf)
   local c
   for c in "${want[@]}"; do
     if grep -qF -- "\`$c\`" "$R"; then

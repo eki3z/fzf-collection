@@ -21,7 +21,6 @@ A collection of commands to enhance commandline with [FZF](https://github.com/ju
     - [gemf](#gemf)
     - [ghf](#ghf)
     - [pathf](#pathf)
-    - [ffp](#ffp)
     - [envf](#envf)
   - [Environment](#environment)
     - [FZF_COLLECTION_MODULES](#fzf_collection_modules)
@@ -78,7 +77,6 @@ beyond `fzf` at load time.
 | `gemf` | `gem` |
 | `ghf` | `gh`, authenticated. No external `jq` — `gh api --jq` is built in |
 | `pathf` | `find` with `-printf`, so GNU or Homebrew findutils, not BSD, plus `uniq` |
-| `ffp` | `ripgrep`, plus `rev` and `cut` |
 | `envf` | nothing beyond `printenv` and `sort` |
 | `info` / `deps` output | `less`, if present — otherwise the output is printed as-is |
 | `homepage` action | `open`, if present — otherwise the URL is printed |
@@ -137,10 +135,6 @@ it was.
 
 `pathf`: find an executable in `$PATH`. `pathf -d` prints its directory
 instead of the full path.
-
-### ffp
-
-`ffp`: find a file in `$FPATH`, then narrow into the directory you pick.
 
 ### envf
 

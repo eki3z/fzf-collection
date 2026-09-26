@@ -74,25 +74,6 @@ fp() {
       done
 }
 
-# [F]ind [FP]ath
-
-ffp() {
-  local loc header
-  header="Find Fpath"
-  # 原来靠 `perl -pe 's/://\n/g'` 把 FPATH 拆行
-  loc=$(print -l -- "${(@s.:.)FPATH}" | _fzf_read)
-
-  if [ -d "$loc" ]; then
-    header="Find Fpath => ${loc}"
-    rg --files "$loc" \
-      | rev \
-      | cut -d"/" -f1 \
-      | rev \
-      | _fzf_read >/dev/null
-    ffp
-  fi
-}
-
 # [E]nv
 
 envf() {
