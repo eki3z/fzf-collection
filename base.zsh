@@ -54,7 +54,7 @@ _fzf_homepage() {
 #
 # 原来这里有 manage / pinned / outdated / general 四个分支，每个分支一条 perl
 # printf 规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走
-# _pkg_display，format 只剩 general 还被 fp / envf 使用，另外三个分支无法到达，
+# _pkg_display，format 只剩 general 还被 pathf / envf 使用，另外三个分支无法到达，
 # 所以删掉了。现在没有任何 perl 也没有 column。
 #
 # general 的语义（对照过 column -t 的输出）：
@@ -118,7 +118,7 @@ typeset -g _FZF_RESET=$'\e[0m'
 #   - 行尾空白会被去掉，所以「a 」输出成「a」
 #
 # 已知限制：column 按显示宽度算，zsh 的 ${#} 按字符数，含宽字符时对齐会偏。
-# 目前的调用方是 crates.io 依赖表与 fp/envf 的列表，字段都是 ASCII。
+# 目前的调用方是 crates.io 依赖表与 pathf / envf 的列表，字段都是 ASCII。
 _fzf_align() {          # $1=可选分隔符
   local delim=$1 line cell
   local -a rows cells keep widths
@@ -186,7 +186,7 @@ _fzf_align() {          # $1=可选分隔符
 #   - 显示名由注册表提供，不再从函数名反推
 #   - 函数派发用 "$fn" 间接展开（zsh 的 nameref 不能派发函数，见计划 2.3）
 #
-# 上面保留的 _fzf_* 是三个独立命令 fp / ffp / envf 用的（collections/fzf-other.zsh），
+# 上面保留的 _fzf_* 是两个独立命令 pathf / envf 用的（collections/fzf-other.zsh），
 # 它们不是包管理器，没有 view / action 的概念，因此没有并入注册表。
 # =============================================================================
 

@@ -31,7 +31,7 @@ t_case_underline() {
 # 2. _fzf_format：只剩 general
 #    原来有 manage / pinned / outdated / general 四个分支，每个一条 perl printf
 #    规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走 _pkg_display，
-#    format 只有 general 还被 fp / envf 使用，另外三个分支无法到达，已删除，
+#    format 只有 general 还被 pathf / envf 使用，另外三个分支无法到达，已删除，
 #    所以这里改为断言「不支持的 format 报错」而不是那三种渲染结果。
 t_case_format() {
   local fmt
@@ -760,7 +760,7 @@ t_case_pkg_failure() {
   rm -f "$cnt" "$logf"
 }
 
-# 17. fp / envf 的取值与 --ansi
+# 17. pathf / envf 的取值与 --ansi
 #     回归点 1：envf 的行含对齐填充与颜色码，取值必须掐掉它们，且要取
 #     「首个字段之后的全部内容」而不是最后一个空白字段 —— 旧代码用
 #     $F[$#F]，PATH 里有 "/Applications/VMware Fusion.app/..." 时
@@ -812,7 +812,7 @@ t_case_other_tail() {
 #     回归点：PATH 的值实测 1994 字符（另一次会话里 2562），是 200 列终端的
 #     10 倍以上，FPATH / LS_COLORS / __MISE_ZSH_ACTIVATE_PATH 同样超宽。
 #     fzf 只能截断并横向滚动这些行，一行看着只剩尾部，整个列表像错位。
-#     fp 的值是「目录 + 文件名」，从不满屏，所以 fp 不受影响 ——
+#     fp 的值是「目录 + 文件名」，从不满屏，所以 pathf 不受影响 ——
 #     这就是两个命令表现不同的原因。
 #     显示截断后，选中必须仍输出完整值。
 t_case_envf_width() {
@@ -915,7 +915,7 @@ t_case_envf_width() {
 #     README 曾经把不存在的 `uvf`、不存在的 `registry` view 写进去，
 #     漏掉 pinned / gemf / envf，依赖表也只提了 grep coreutils 和 gh jq。
 #     文档漂移不会让任何东西坏掉，所以不会有人发现 —— 除了专门查它的时候。
-#     cargof / ffp 已移除，本用例的清单必须跟着变，
+#     cargof / ffp 已移除、fp 已改名为 pathf，本用例的清单必须跟着变，
 #     否则它会把「文档写了不存在的命令」当成正确。
 t_case_readme() {
   local R=$root/README.md
@@ -926,7 +926,7 @@ t_case_readme() {
 
   t_sep "公开命令：README 必须逐个收录，且不多不少"
   local -a want
-  want=(brewf npmf pnpmf pipf gemf ghf fp envf)
+  want=(brewf npmf pnpmf pipf gemf ghf pathf envf)
   local c
   for c in "${want[@]}"; do
     if grep -qF -- "\`$c\`" "$R"; then
@@ -1125,7 +1125,6 @@ t_case_readme() {
     print -r -- "      _fzf_opts: ${(j: :)inopts}"
   fi
 }
-
 
 t_run_all() {
   t_case_underline

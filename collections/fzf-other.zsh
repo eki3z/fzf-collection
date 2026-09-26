@@ -4,10 +4,10 @@
 # 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
 # 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
 
-# 这三个命令（fp / ffp / envf）不是包管理器，没有 view 与 action 的概念，
+# 这两个命令（pathf / envf）不是包管理器，没有 view 与 action 的概念，
 # 所以不进注册表，各自带一个 header 变量。
 
-# fp 与 envf 的 fzf 调用显式带 --ansi。_fzf_opts 里默认也有（见
+# pathf 与 envf 的 fzf 调用显式带 --ansi。_fzf_opts 里默认也有（见
 # fzf-collection.plugin.zsh 的 FZF_COLLECTION_OPTS 默认值），但那是用户可覆盖的
 # 变量 —— 一旦有人设 FZF_COLLECTION_OPTS 时漏掉 --ansi，_fzf_format 加的颜色
 # 就会被 fzf 当普通文本：不上色，还把 \e[34m 的 5+4 个字节算进显示宽度，
@@ -35,10 +35,10 @@ _fzf_tail() {             # $1=行
   print -r -- "$t"
 }
 
-# [F]ind [P]ath
+# [P]ath [F]ind
 # option -d return executable path
 
-fp() {
+pathf() {
   local header format line dir
   local i
   header="Find Path"
@@ -88,11 +88,10 @@ envf() {
   # zsh 的 read -d 能吃 NUL（read -r -d $'\0'），所以不需要 tr 或 perl。
   # 读进来后：换行压成空格（与旧实现一致），第一个 = 换成空格。
   #
-  # 显示层把值截到 valmax 个字符。必须截 —— PATH 的值实测 1994 字符
-  # （run.sh 的 zsh -c 环境下；交互 shell 经 mise 重写后是 1464），
-  # 200 列终端放不下，FPATH / LS_COLORS / __MISE_ZSH_ACTIVATE_PATH
+  # 显示层把值截到 valmax 个字符。必须截 —— PATH 的值实测 1994 字符，
+  # 是 200 列终端的 10 倍，FPATH / LS_COLORS / __MISE_ZSH_ACTIVATE_PATH
   # 也都超屏宽。fzf 只能截断并横向滚动这些行，于是一行看着只剩尾部，
-  # 整个列表像是错位。fp 的值是「目录 + 文件名」，从没超宽，所以它不受影响 ——
+  # 整个列表像是错位。pathf 的值是「目录 + 文件名」，从没超宽，所以它不受影响 ——
   # 这就是两个命令表现不同的原因。
   #
   # 截断只影响显示：选中后按 key 从环境重新取完整值（见管道末尾）。
