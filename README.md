@@ -32,6 +32,8 @@ A collection of commands to enhance commandline with [FZF](https://github.com/ju
     - [_UVF_INDEX](#_uvf_index)
     - [_UVF_PYPI_JSON](#_uvf_pypi_json)
   - [Colours](#colours)
+  - [Registry](#registry)
+  - [Adding a package manager](#adding-a-package-manager)
   - [Development](#development)
   - [Todo](#todo)
 
@@ -292,7 +294,7 @@ on 0.16.9), and these four need current metadata. A stale snapshot makes
 
 ## Colours
 
-The palette is one associative array, `_FZF_SGR` in `base.zsh`, keyed by the
+_FC_SGR in `base.zsh` is the whole palette: one associative array, keyed by the
 *role* a column plays rather than by its colour:
 
 | Role | Used for | Colour |
@@ -307,13 +309,87 @@ A view declares its columns in the registry with `<eco>:<view>:cols`, space
 separated, one role per column: `outdated` is `name have sep want`, `manage`
 is `name have`, `search` is `name`. Re-theme every view at once by editing the
 palette. A role name that is not in the table is reported once on stderr and
-treated as no colour; a bare SGR parameter such as `34` is still accepted, so
-the older `0,34,0,33` form keeps working.
+treated as no colour. Nothing else is accepted — a bare SGR parameter like `34`
+is not a role name, and neither is `0`; whether a role is coloured is the
+palette's answer, not the spec's spelling.
 
 Escape sequences appear in the data, so fzf has to be told about them — see
 [`FZF_COLLECTION_OPTS`](#fzf_collection_opts). Alignment is measured on the
 uncoloured text: each column is padded first and coloured afterwards, which is
 why the padding never has to account for the sequences.
+
+## Registry
+
+Every `*-f` view is a row in one associative array, `_FC_REG` in `base.zsh`.
+A collection file is mostly this array plus the functions it names; the driver
+in `base.zsh` contains no package-manager logic at all.
+
+Keys have the shape `_FC_REG[<eco>[:<view>]][:<field>]`. A list function is
+registered under a two-segment key, an action handler under a two-segment key
+too — the same map holds data and code, which is worth knowing before you
+invent a field name (see `install-version` below).
+
+Per ecosystem:
+
+| Field | Meaning |
+| --- | --- |
+| `title` | the name shown in the view menu |
+| `views` | the views, space separated |
+| `stay` | actions that leave you in the action menu after they run |
+| `mutating` | actions that change state, so a failure stops the batch |
+| `fallback` | function receiving `(action, package)` for actions with no handler |
+| `list-versions` | function listing every available version, one per line |
+| `current-version` | function printing the installed version |
+| `install-version` | function installing `package` at `version` |
+
+Per view, `<eco>:<view>` itself is the function that produces the list:
+
+| Field | Meaning |
+| --- | --- |
+| `title` | the name in the header; falls back to the ecosystem's |
+| `actions` | the action menu, space separated; falls back to the ecosystem's |
+| `mutating` | overrides the ecosystem's list |
+| `cols` | one [colour role](#colours) per column, space separated |
+| `fzf-opts` | extra options for fzf in this view |
+
+A list function prints `name<TAB>field<TAB>...`, one row per line, with no
+colour and no padding — the display layer does both. An action handler is
+registered as `_FC_REG[<eco>:<action>]` and receives the package name. With no
+handler, `fallback` gets `(action, package)`.
+
+Two things to know before adding a field. First, a key is always assembled into
+a variable and only then used as a subscript: `_FC_REG[$eco:title]` would have
+zsh read `:t` as a parameter modifier — `tail` — and return an empty string
+without an error. Second, a data key must not be spelled like an action, or
+selecting that action dispatches to it: `install` is a real action in `search`,
+which is why the version fields are `list-versions`, `current-version` and
+`install-version` and not `versions` / `current` / `install`. `t_case_registry`
+asserts both.
+
+## Adding a package manager
+
+A collection is one file under `collections/`, named `fzf-<name>.zsh`, and it
+is loaded by `fzf-collection.plugin.zsh` — never on its own, which is why it
+does not have to declare anything the driver already declared.
+
+1. **A `<eco>f` function** that calls `_fc_cmd <eco>`, and the name added to
+   `FZF_COLLECTION_MODULES` in the plugin entry file.
+2. **The registry block**, with `title` and `views` at minimum.
+3. **One list function per view**, printing `name<TAB>...` rows.
+4. **`_FC_REG[<eco>:fallback]`**, unless every action has a handler.
+5. **The version trio** (`list-versions`, `current-version`, `install-version`)
+   only if the ecosystem can install a specific version — that is what makes
+   `rollback` work, and `rollback` should be in `actions` only when all three
+   are present.
+
+Then:
+
+- `tests/cases.sh` — the view list, key shape and action-dispatch cases read the
+  registry, so a new ecosystem shows up there without edits, and a mistake in
+  yours shows up as a failure rather than as silence.
+- `README.md` — the command, its views, and its external commands. The
+  consistency case checks all three, including that every command the code
+  calls appears in the requirements table.
 
 ## Development
 

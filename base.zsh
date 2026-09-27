@@ -194,8 +194,8 @@ _fc_sgr_strip() {           # $1=行
 #   - 显示名由注册表提供，不再从函数名反推
 #   - 函数派发用 "$fn" 间接展开（zsh 的 nameref 不能派发函数，见计划 2.3）
 #
-# 上面保留的 _fzf_* 是两个独立命令 pathf / envf 用的（collections/fzf-other.zsh），
-# 它们不是包管理器，没有 view / action 的概念，因此没有并入注册表。
+# pathf 与 envf 不走这里：它们不是包管理器，没有 view / action 的概念，
+# 因此不进注册表，连表格排版都跟着搬进了 collections/fzf-other.zsh。
 # =============================================================================
 
 # -g 是刻意的：若本文件被从函数里 source，普通 typeset 会把 _FC_REG 变成局部变量，

@@ -141,7 +141,7 @@ hygiene_gate() {
           top++; kind[top] = "loop"; lind[top] = ind; next
         }
         # 函数起点。必须容许 { 后跟行尾注释 —— 本仓库的函数几乎都这么写
-        # （`_pkg_rollback() {          # $1=eco $2=pkg`）。漏认会让
+        # （`_fc_rollback() {        # $1=eco $2=pkg`）。漏认会让
         # local 名单跨函数累积，line / f / n 这类常用名互相误报。
         if (s ~ /^[A-Za-z_][A-Za-z0-9_.:-]*[ \t]*\([ \t]*\)[ \t]*\{([ \t]*#.*)?$/) {
           top++; kind[top] = "func"; lind[top] = ind; forget(); next
@@ -172,7 +172,7 @@ run_cases() {
       export root
       # 颜色必须显式钉在开启。插件在加载时判 [[ -t 1 ]]，而这里是子 shell
       # 的非交互 zsh，恒为 false —— 不钉住的话颜色全关，baseline 里那些
-      # 带 ESC 的行（_fzf_format 与 _fzf_msg 的输出）会整片掉转义。
+      # 带 ESC 的行（_other_format 与 _fc_msg 的输出）会整片掉转义。
       # 关色那条路由 t_case_palette 自己单独测。
       FZF_COLLECTION_COLOR=1
       export FZF_COLLECTION_COLOR

@@ -601,7 +601,7 @@ t_case_failure() {
   local -a rows
   # local 而不是 typeset -g：stub _fc_fzf_read 是在 $(...) 子 shell 里被调的，
   # zsh 动态作用域照样看得到调用者的 local，但它不该以全局的形式活过本用例。
-  # （插件自己也依赖同一个性质，见 base.zsh 的 _fc_fzf_read 读 header。）
+  # （插件自己也依赖同一个性质，见 base.zsh 的 _fc_fzf_read 读 _FC_HEADER。）
   local SEL_ACT
   cnt=$(mktemp)
   logf=$(mktemp)

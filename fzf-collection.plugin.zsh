@@ -44,7 +44,7 @@ source "${0:h:A}/base.zsh"
 #   FZF_COLLECTION_COLOR=0|1  >  NO_COLOR 非空  >  TERM 为空或 dumb
 #   >  [[ -t 1 ]]
 #
-# 关闭时 _fzf_prefix 什么都不输出，于是行内容与开启时逐字节相同 ——
+# 关闭时 _fc_sgr_prefix 什么都不输出，于是行内容与开启时逐字节相同 ——
 # 只是没有转义序列。对齐、补齐、取值都不受影响。
 typeset -gi _FC_COLOR=1
 if [[ -z ${FZF_COLLECTION_COLOR:-} ]]; then
