@@ -32,7 +32,7 @@ _gemf_list_installed() {
     name=${line%%' ('*}
     vers=${line#*' ('}
     vers=${vers%')'}
-    print -r -- "$name${_G_TAB}${vers//, /|}"
+    print -r -- "$name${_FC_TAB}${vers//, /|}"
   done
 }
 
@@ -46,7 +46,7 @@ _gemf_list_outdated() {
     rest=${line#* }
     cur=${rest%% *}
     tail=${rest#* }
-    print -r -- "$name${_G_TAB}$cur${_G_TAB}=>${_G_TAB}$tail"
+    print -r -- "$name${_FC_TAB}$cur${_FC_TAB}=>${_FC_TAB}$tail"
   done
 }
 
@@ -66,7 +66,7 @@ _gemf_version_list() {
     s=${line##*\(}
     s=${s%\)}
     # 换行走变量：${s//, /$'\n'} 里的 $'\n' 不会被求值
-    print -r -- "${s//, /$_G_NL}"
+    print -r -- "${s//, /$_FC_NL}"
   done
 }
 
@@ -117,17 +117,9 @@ _gemf_act() {
 
 # ---- 注册表 ----
 
-# base.zsh 已用 typeset -gA 声明过；这里再确认一次，使本文件即使被单独 source
-# 也不会把 PKG 变成普通数组（下标里的 ':' 会被当成算术求值）。
-[[ ${(t)PKG} == association ]] || typeset -gA PKG
+# 分隔符用 base.zsh 的 _FC_TAB / _FC_NL。这里原来自己声明过 _FC_TAB 与 _FC_NL。
 
-# 换行符。${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
-# 会原样输出这四个字符，所以只能走变量。必须在文件顶层声明 ——
-# 循环体内的标量 local 会往 stdout 打一行赋值，混进候选列表。
-typeset -g _G_TAB=$'\t'
-typeset -g _G_NL=$'\n'
-
-PKG+=(
+_FC_REG+=(
   'gem:title'   'Gem'
   'gem:views'   'outdated search manage'
   'gem:runner'  '_gemf_act'

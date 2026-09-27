@@ -57,7 +57,7 @@ _pipf_version_list() {
     s=${line#*'Available versions: '}
     # 换行必须走变量：${s//, /$'\n'} 里的 $'\n' 不被求值，
     # 会原样输出这四个字符。flag 参数是字面量，替换位同理。
-    print -r -- "${s//, /$_PIP_NL}"
+    print -r -- "${s//, /$_FC_NL}"
     break
   done
 }
@@ -106,16 +106,9 @@ _pipf_rollback() { _pkg_rollback pip "$1" }
 
 # ---- 注册表 ----
 
-# base.zsh 已用 typeset -gA 声明过；这里再确认一次，使本文件即使被单独 source
-# 也不会把 PKG 变成普通数组（下标里的 ':' 会被当成算术求值）。
-[[ ${(t)PKG} == association ]] || typeset -gA PKG
+# 换行用 base.zsh 的 _FC_NL。这里原来自己声明过一份 _FC_NL。
 
-# 换行符。${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
-# 会原样输出这四个字符，所以只能走变量。必须在文件顶层声明 ——
-# 循环体内的标量 local 会往 stdout 打一行赋值，混进候选列表。
-typeset -g _PIP_NL=$'\n'
-
-PKG+=(
+_FC_REG+=(
   'pip:title'          'Pip'
   'pip:views'          'outdated search manage'
   'pip:runner'         '_pipf_act'

@@ -36,7 +36,7 @@ _uvf_list_installed() {
     f=(${(z)line})
     (( ${#f} >= 2 )) || continue
     # 顶层行是 `name v1.2.3`，uv 自己带 v 前缀，去掉它与 pipf / npmf 对齐
-    print -r -- "${f[1]}${_UVF_TAB}${f[2]#v}"
+    print -r -- "${f[1]}${_FC_TAB}${f[2]#v}"
   done
 }
 
@@ -62,7 +62,7 @@ _uvf_list_outdated() {
     f=(${(z)line})
     (( ${#f} >= 2 )) || continue
     # 四列与 pipf / npmf 同形：名字 | 当前 | => | 最新
-    print -r -- "${f[1]}${_UVF_TAB}${f[2]#v}${_UVF_TAB}=>${_UVF_TAB}${latest}"
+    print -r -- "${f[1]}${_FC_TAB}${f[2]#v}${_FC_TAB}=>${_FC_TAB}${latest}"
   done
 }
 
@@ -195,15 +195,9 @@ _uvf_rollback() { _pkg_rollback uv "$1" }
 
 # ---- 注册表 ----
 
-# base.zsh 已用 typeset -gA 声明过；这里再确认一次，使本文件即使被单独 source
-# 也不会把 PKG 变成普通数组（下标里的 ':' 会被当成算术求值）。
-[[ ${(t)PKG} == association ]] || typeset -gA PKG
+# 分隔符用 base.zsh 的 _FC_TAB。这里原来自己声明过一份 _FC_TAB。
 
-# 列表行里的制表符。必须在文件顶层声明 —— 循环体内的标量 local 会往 stdout
-# 打一行赋值，混进候选列表（见 base.zsh 的 _pkg_display 注释）。
-typeset -g _UVF_TAB=$'\t'
-
-PKG+=(
+_FC_REG+=(
   'uv:title'          'Uv'
   'uv:views'          'outdated search manage'
   'uv:runner'         '_uvf_act'

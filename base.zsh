@@ -6,9 +6,10 @@
 
 # FZF_COLLECTION_OPTS 是一个字符串，要按空白切成数组再传给 fzf。
 # ${=var} 是 zsh 的强制分词 flag（默认不分词）。
-# 原来写的是 _fzf_opts=($(echo "$FZF_COLLECTION_OPTS}")) —— 结果相同，
+# 原来写的是 _FC_OPTS=($(echo "$FZF_COLLECTION_OPTS}")) —— 结果相同，
 # 但为了分词而 fork 一次 echo，插件每次加载都白付这个代价。
-_fzf_opts=(${=FZF_COLLECTION_OPTS})
+# -ga 是显式的：以前靠一句没有声明的赋值碰巧建出数组，数组性是隐式的。
+typeset -ga _FC_OPTS=(${=FZF_COLLECTION_OPTS})
 
 _fzf_exist() {
   command -v "$@" &>/dev/null
@@ -72,8 +73,8 @@ _fzf_format() {          # $format 由调用方设为 general
   # 两个变量而不是一个，正是为了「不上色时后缀也是空」——否则会留下裸的
   # \e[0m，而 _fzf_unpaint 之外的消费者未必认得它。
   _fzf_prefix have
-  pre=$_FZF_PRE
-  if [[ -n $pre ]]; then post=$_FZF_RESET; else post=''; fi
+  pre=$_FC_SGR_PREFIX
+  if [[ -n $pre ]]; then post=$_FC_SGR_RESET; else post=''; fi
   # 末行没有换行时 read 返回非零但仍填了变量，所以要补一次判断
   while IFS= read -r line || [[ -n $line ]]; do lines+=("$line"); done
   # 输入里只有空行时什么都不输出。旧实现是 `input="$(cat)"` 再 `[ -n "$input" ]`，
@@ -94,25 +95,33 @@ _fzf_format() {          # $format 由调用方设为 general
     while [[ $rest == *"  "* ]]; do rest=${rest//  / }; done
     while [[ $rest == ' '* ]]; do rest=${rest# }; done
     while [[ $rest == *' ' ]]; do rest=${rest% }; done
-    out+=("$first$_FZF_SEP$pre$rest$post")
+    out+=("$first$_FC_SEP$pre$rest$post")
   done
-  print -rl -- "${out[@]}" | _fzf_align "$_FZF_SEP"
+  print -rl -- "${out[@]}" | _fzf_align "$_FC_SEP"
 }
 
 # =============================================================================
 # 配色与 SGR
 #
 # CSI 序列只在这一段里出现。着色一律走 _fzf_prefix，剥色走 _fzf_unpaint ——
-# 换配色时只改 _FZF_SGR 一处。
+# 换配色时只改 _FC_SGR 一处。
 # =============================================================================
 
-# ${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
-# 会原样输出这四个字符，所以换行只能走变量。必须在文件顶层声明 ——
-# 循环体内的标量 local 会往 stdout 打一行赋值，混进候选列表。
-typeset -g _FZF_NL=$'\n'
+# 分隔符。TAB 与换行都必须先落到变量：
+#   - ${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
+#     会原样输出这四个字符
+#   - ${(ps:\t:)x} 的 flag 参数同样不接受 $'\t'
+# 而且必须在文件顶层声明：循环体内的标量 local 会让 zsh 5.9 往 stdout 打一行
+# 赋值，那一行会变成一条假候选（曾经表现为 pnpmf 列表里混进 k=6）。
+#
+# 这里原来只有 _FC_NL，而 _B_TAB / _G_TAB / _G_NL / _PIP_NL / _UVF_TAB 分散在
+# 四个 collection 里各声明一份 —— 同一个常量四种前缀，同一段说明复制四遍，
+# 而读者永远不会同时打开四个文件。现在 collection 里一个全局都不剩。
+typeset -g _FC_TAB=$'\t'
+typeset -g _FC_NL=$'\n'
 # _fzf_format 的字段分隔符。与空白区分开才能传给 _fzf_align ——
 # 空白模式下它是「按空白切、剥前导空白」，指定分隔符时不是。
-typeset -g _FZF_SEP='^^'
+typeset -g _FC_SEP='^^'
 
 # 调色板：角色名 -> SGR 前缀。
 #
@@ -122,7 +131,7 @@ typeset -g _FZF_SEP='^^'
 #
 # 值为空串 = **明确不着色**，不是「没配」。所以解析器必须用 [[ -v ]] 查表，
 # 靠取值判空的话，拼错的名字会和 name 一样静默降级 —— 查表是唯一的分界。
-typeset -gA _FZF_SGR=(
+typeset -gA _FC_SGR=(
   name ''          # 包名 / 首字段
   have $'\e[34m'   # 已装版本、说明文字
   sep  ''          # '=>' 之类的连接符
@@ -133,45 +142,45 @@ typeset -gA _FZF_SGR=(
 # 也该说出来。告警去重靠这个标志**在当前 shell 里被赋值**，所以下面的
 # _fzf_prefix 必须走输出变量而不是命令替换：命令替换跑在子 shell 里，
 # 赋的值出不来，于是每次渲染都会重吵一遍。
-typeset -gi _FZF_ROLE_WARNED=0
-# _fzf_prefix 的输出。同 _pkg_split_tabs -> _PKG_FIELDS、_pkg_view_mutating ->
-# _PKG_MUTATING 的约定：结果落在全局变量里，函数不 print，也不 fork。
-typeset -g _FZF_PRE=''
+typeset -gi _FC_SGR_WARNED=0
+# _fzf_prefix 的输出。同 _pkg_split_tabs -> _FC_FIELDS、_pkg_view_mutating ->
+# _FC_MUTATING 的约定：结果落在全局变量里，函数不 print，也不 fork。
+typeset -g _FC_SGR_PREFIX=''
 
 # 颜色转义序列。$'\e[34m' 写在双引号里不会被求值（和 $'\n' 同一个陷阱），
 # 只会得到字面的 `$'\e[34m'` 七个字符，所以必须先落到变量里。
 # 这里只有 RESET：原先还有个 _FZF_BLUE，着色改走调色板后它已无人引用，
 # 留着还会在换色后变成一个撒谎的名字（角色 have 改成青色，它就跟着变青）。
-typeset -g _FZF_RESET=$'\e[0m'
+typeset -g _FC_SGR_RESET=$'\e[0m'
 
-# 解析一个配色 spec，结果写进 _FZF_PRE（空串 = 不着色）。
+# 解析一个配色 spec，结果写进 _FC_SGR_PREFIX（空串 = 不着色）。
 #
-# 用输出变量而不是 print + $(...)：命令替换在子 shell 里跑，_FZF_ROLE_WARNED
+# 用输出变量而不是 print + $(...)：命令替换在子 shell 里跑，_FC_SGR_WARNED
 # 的赋值出不来，去重就失效了；而这里每个 view 每次渲染都要问一次颜色，
-# 走命令替换还白白 fork 一次。约定与 _PKG_FIELDS / _PKG_MUTATING 一致。
+# 走命令替换还白白 fork 一次。约定与 _FC_FIELDS / _FC_MUTATING 一致。
 #
 # spec 有三种写法：
 #   空 / 0 / -            不着色
 #   数字与分号（34、1;32）  原样当 SGR 参数
-#   其余                  查 _FZF_SGR 的角色名
+#   其余                  查 _FC_SGR 的角色名
 #
 # 数字那条是为兼容旧的 cols 声明（'0,34,0,33'）留的，两种写法都认。
 _fzf_prefix() {            # $1=spec
   local s=$1
-  _FZF_PRE=''
+  _FC_SGR_PREFIX=''
   if [[ -z $s || $s == 0 || $s == - ]]; then
     return 0
   elif [[ $s == *[!0-9\;]* ]]; then
-    # 查表前先挡掉含 ']' 的输入：[[ -v _FZF_SGR[$s] ]] 里 zsh 会把括号里的内容
+    # 查表前先挡掉含 ']' 的输入：[[ -v _FC_SGR[$s] ]] 里 zsh 会把括号里的内容
     # 当下标表达式求值，而 spec 是注册表字符串里的数据，不能假定它老实。
-    if [[ $s == *[^a-z0-9_-]* ]] || [[ ! -v _FZF_SGR[$s] ]]; then
-      if (( ! _FZF_ROLE_WARNED )); then
-        _FZF_ROLE_WARNED=1
+    if [[ $s == *[^a-z0-9_-]* ]] || [[ ! -v _FC_SGR[$s] ]]; then
+      if (( ! _FC_SGR_WARNED )); then
+        _FC_SGR_WARNED=1
         print -ru2 -- "fzf-collection: 未知配色角色 '${s}'，按不上色处理"
       fi
       return 0
     fi
-    s=${_FZF_SGR[$s]}
+    s=${_FC_SGR[$s]}
     [[ -n $s ]] || return 0
   else
     # $'\e[' 与参数之间不能加引号以外的任何东西，也不能写成 "$'\e['" ——
@@ -179,8 +188,8 @@ _fzf_prefix() {            # $1=spec
     s=$'\e['${s}'m'
   fi
   # 角色合法性先判、开关后判：配置写错时即便颜色关着也要报。
-  (( _FZF_COLOR )) || return 0
-  _FZF_PRE=$s
+  (( _FC_COLOR )) || return 0
+  _FC_SGR_PREFIX=$s
 }
 
 # 上色后原样输出文本。
@@ -192,9 +201,9 @@ _fzf_prefix() {            # $1=spec
 _fzf_paint() {             # $1=spec $2=text
   local p
   _fzf_prefix "$1"
-  p=$_FZF_PRE
+  p=$_FC_SGR_PREFIX
   [[ -n $p ]] || { print -r -- "$2"; return 0 }
-  print -r -- "$p$2$_FZF_RESET"
+  print -r -- "$p$2$_FC_SGR_RESET"
 }
 
 # 剥掉一行里全部的 SGR 序列。
@@ -246,7 +255,7 @@ _fzf_align() {          # $1=可选分隔符
     if [[ -n $delim ]]; then
       # 分隔符是变量时 ${(s:$delim)var} 不展开（flag 参数是字面量），
       # 所以先替换成换行再按行切。给 $delim 加引号是为了不让它当 glob。
-      keep=("${(@f)${line//"$delim"/$_FZF_NL}}")
+      keep=("${(@f)${line//"$delim"/$_FC_NL}}")
     else
       keep=("${(@s: :)line}")
     fi
@@ -262,7 +271,7 @@ _fzf_align() {          # $1=可选分隔符
   for line in "${rows[@]}"; do
     cells=()
     if [[ -n $delim ]]; then
-      keep=("${(@f)${line//"$delim"/$_FZF_NL}}")
+      keep=("${(@f)${line//"$delim"/$_FC_NL}}")
     else
       keep=("${(@s: :)line}")
     fi
@@ -286,7 +295,7 @@ _fzf_align() {          # $1=可选分隔符
 #
 # 7 个包管理器的 collection 全部走这里。相对重构前的写法：
 #   - 列表是结构化行 name<TAB>f2<TAB>...
-#   - 列表默认整轮 session 只查询一次，缓存在 _PKG_ROWS，动作后从内存删行
+#   - 列表默认整轮 session 只查询一次，缓存在 _FC_ROWS，动作后从内存删行
 #   - 例外：单列且没有可达 mutating 动作的视图走流式，见 _pkg_streamable
 #   - 不写 /tmp 临时文件，不靠 funcstack 递归重入
 #   - 显示名由注册表提供，不再从函数名反推
@@ -296,28 +305,24 @@ _fzf_align() {          # $1=可选分隔符
 # 它们不是包管理器，没有 view / action 的概念，因此没有并入注册表。
 # =============================================================================
 
-# -g 是刻意的：若本文件被从函数里 source，普通 typeset 会把 PKG 变成局部变量，
-# 函数返回后下标 ${PKG[eco:view]} 会被当成算术下标求值，
+# -g 是刻意的：若本文件被从函数里 source，普通 typeset 会把 _FC_REG 变成局部变量，
+# 函数返回后下标 ${_FC_REG[eco:view]} 会被当成算术下标求值，
 # 报出 "bad math expression: ':' without '?'" 这种完全无法定位的错误。
-typeset -gA PKG         # 注册表：PKG[<eco>[:<view>]][:<field>] = value
-typeset -ga _PKG_ROWS    # 当前 session 的列表，由 _pkg_session 独占
-typeset -ga _PKG_FIELDS # _pkg_split_tabs 的输出
-typeset -gi _PKG_STREAM # 1 = 当前 view 走流式路径（_pkg_feed 用），见 _pkg_streamable
-
-# 注册表类型自检。关联数组被误重建为普通数组时给出明确诊断，
-# 而不是让下标里的 ':' 被当成三元运算符。
-_pkg_ready() {
-  if [[ ${(t)PKG} != association ]]; then
-    print -ru2 "fzf-collection: 注册表 PKG 类型错误（当前: ${(t)PKG:-未定义}）"
-    print -ru2 "  请重新加载插件；若自定义了 .zshrc 请检查是否有同名变量 PKG"
-    return 1
-  fi
-  return 0
-}
+#
+# 全仓库**只有这一处**声明 _FC_REG。原先每个 collection 里还有一行
+# `[[ ${(t)PKG} == association ]] || typeset -gA PKG`，七份同样的守卫，
+# 理由是「万一用户 .zshrc 里有个同名的 PKG」。改名成 _FC_REG 之后这个理由
+# 不成立了，而「单独 source 一个 collection」本来就不是支持的用法 ——
+# 每个文件的头部都写着它由 fzf-collection.plugin.zsh 加载。
+# 同理删除的还有 _pkg_ready()：它的唯一职责就是诊断上面那个抢名字的情况。
+typeset -gA _FC_REG         # 注册表：_FC_REG[<eco>[:<view>]][:<field>] = value
+typeset -ga _FC_ROWS    # 当前 session 的列表，由 _pkg_session 独占
+typeset -ga _FC_FIELDS # _pkg_split_tabs 的输出
+typeset -gi _FC_STREAM # 1 = 当前 view 走流式路径（_pkg_feed 用），见 _pkg_streamable
 
 # 注册表读取。key 必须在变量里拼好再用于下标。
 #
-# 绝对不要写 ${PKG[$eco:title]} —— zsh 会把 ':' 后的首字母当成参数修饰符：
+# 绝对不要写 ${_FC_REG[$eco:title]} —— zsh 会把 ':' 后的首字母当成参数修饰符：
 #   :h head  :t tail  :r root  :e extension  :s suffix  :l lower  :u upper
 # 于是 $eco:title 里的 ':t' 被解释成 tail，返回空字符串且没有任何报错。
 # 受影响的字段名（本项目全部踩过）：title / loop / runner / homepage /
@@ -326,10 +331,10 @@ _pkg_get() {
   local key=$1 part
   shift
   for part in "$@"; do key="${key}:${part}"; done
-  [[ -n ${PKG[$key]:-} ]] && print -r -- "${PKG[$key]}"
+  [[ -n ${_FC_REG[$key]:-} ]] && print -r -- "${_FC_REG[$key]}"
 }
 
-# 读 view 级字段：PKG[<eco>:<view>:<field>]。
+# 读 view 级字段：_FC_REG[<eco>:<view>:<field>]。
 #
 # 单独拆一个函数，是因为 key 的分段顺序只有一处能写对。注册表约定是
 # eco:view:field，而 _pkg_get 是「eco 后面接什么就是什么」，于是
@@ -339,32 +344,32 @@ _pkg_get() {
 _pkg_view_get() {           # $1=eco $2=view $3=field
   local key=$1
   key="${key}:${2}:${3}"
-  [[ -n ${PKG[$key]:-} ]] && print -r -- "${PKG[$key]}"
+  [[ -n ${_FC_REG[$key]:-} ]] && print -r -- "${_FC_REG[$key]}"
 }
 
 # fzf 读取。退出码透传，调用方靠它区分「选中」与「取消」（旧驱动的 B11）。
 # --tabstop=1：本驱动的行约定是「tab = 列分隔符，渲染成恰好 1 个空格」，
 # 列对齐由 _pkg_display 补空格完成，不交给 tab stop。
 _pkg_read() {
-  fzf "${_fzf_opts[@]}" --tabstop=1 --header "$(_fzf_underline "$header")" "$@"
+  fzf "${_FC_OPTS[@]}" --tabstop=1 --header "$(_fzf_underline "$header")" "$@"
 }
 
 # 按 tab 切分一行。不能用 ${(ps:\t:)var} —— flag 参数不接受 $'\t'（见计划 2.3）。
-_pkg_split_tabs() {        # $1=line -> _PKG_FIELDS
+_pkg_split_tabs() {        # $1=line -> _FC_FIELDS
   local rest=$1
-  _PKG_FIELDS=()
+  _FC_FIELDS=()
   while :; do
     case $rest in
-      *$'\t'*) _PKG_FIELDS+=("${rest%%$'\t'*}"); rest=${rest#*$'\t'} ;;
-      *)       _PKG_FIELDS+=("$rest"); break ;;
+      *$'\t'*) _FC_FIELDS+=("${rest%%$'\t'*}"); rest=${rest#*$'\t'} ;;
+      *)       _FC_FIELDS+=("$rest"); break ;;
     esac
   done
 }
 
-# 展示层：把 _PKG_ROWS（干净的 name<TAB>f2<TAB>... ）渲染成对齐且逐列着色的 fzf 行。
+# 展示层：把 _FC_ROWS（干净的 name<TAB>f2<TAB>... ）渲染成对齐且逐列着色的 fzf 行。
 #
 # 列数与配色由注册表 <eco>:<view>:cols 给出，**空格分隔**，每列一个 spec。
-# spec 是调色板里的角色名（见 _FZF_SGR），值写错了由 _fzf_prefix 降级并告警：
+# spec 是调色板里的角色名（见 _FC_SGR），值写错了由 _fzf_prefix 降级并告警：
 #   'name have sep want'  name | 蓝 | 无 | 黄   即 outdated 的四列双色
 #   'name have'           name | 蓝             即 manage 的两列
 #   'name'                单列                   即 search
@@ -386,9 +391,9 @@ _pkg_display() {           # $1=eco $2=view
   # `NAME=<上一轮的值>`（含 ESC 的值显示成 $'\C-...'）。本函数的 stdout
   # 直接喂给 fzf，那一行会变成一条假候选（曾经表现为列表里出现 k=6）。
   # 写对位置的话 _pkg_display 输出的每一行都以包名开头。
-  local -i csep=${_PKG_COLSEP:-5}
+  local -i csep=${_FC_COLUMN_GAP:-5}
 
-  n=${#_PKG_ROWS}
+  n=${#_FC_ROWS}
   (( n )) || return 0
 
   cols=(${(s: :)$(_pkg_view_get "$eco" "$view" cols)})
@@ -405,8 +410,8 @@ _pkg_display() {           # $1=eco $2=view
   # 所以对齐与配色互不干扰。
   for (( i = 1; i <= nf; i++ )); do
     _fzf_prefix "${cols[i]}"
-    pre[i]=$_FZF_PRE
-    if [[ -n ${pre[i]} ]]; then post[i]=$_FZF_RESET; else post[i]=''; fi
+    pre[i]=$_FC_SGR_PREFIX
+    if [[ -n ${pre[i]} ]]; then post[i]=$_FC_SGR_RESET; else post[i]=''; fi
   done
 
   widths=()
@@ -414,9 +419,9 @@ _pkg_display() {           # $1=eco $2=view
   # 单列时 widths 一次都用不到（补齐只发生在 i < nf 的分支里，而单列没有那种分支），
   # 所以整个预扫描可以跳过：它要再把全表过一遍，4 万行就是 3~4s 白花。
   if (( nf > 1 )); then
-    for line in "${_PKG_ROWS[@]}"; do
+    for line in "${_FC_ROWS[@]}"; do
       _pkg_split_tabs "$line"
-      flds=("${_PKG_FIELDS[@]}")
+      flds=("${_FC_FIELDS[@]}")
       for (( i = 1; i <= nf; i++ )); do
         cell=${flds[i]:-}
         (( ${#cell} > widths[i] )) && widths[i]=${#cell}
@@ -424,9 +429,9 @@ _pkg_display() {           # $1=eco $2=view
     done
   fi
 
-  for line in "${_PKG_ROWS[@]}"; do
+  for line in "${_FC_ROWS[@]}"; do
     _pkg_split_tabs "$line"
-    flds=("${_PKG_FIELDS[@]}")
+    flds=("${_FC_FIELDS[@]}")
     segs=()
     for (( i = 1; i <= nf; i++ )); do
       cell=${flds[i]:-}
@@ -442,7 +447,7 @@ _pkg_display() {           # $1=eco $2=view
       fi
     done
     # 字段之间用 COLSEP 个 tab 分隔，配合 --tabstop=1 渲染成同样多个空格。
-    # 默认 5：比单个空格宽，列间更易读。设 _PKG_COLSEP 可调整。
+    # 默认 5：比单个空格宽，列间更易读。设 _FC_COLUMN_GAP 可调整。
     #
     # tab 必须用 $'\t' 手工拼接。${(j:\t:)segs} 不行 —— flag 的参数是字面量，
     # '\t' 不会被解释成转义，会原样输出两个字符；变量也不行，
@@ -468,7 +473,7 @@ _pkg_display() {           # $1=eco $2=view
   done
 }
 
-# 收集查询结果。_PKG_ROWS 里是干净的 name<TAB>rest，不含颜色与对齐空格。
+# 收集查询结果。_FC_ROWS 里是干净的 name<TAB>rest，不含颜色与对齐空格。
 #
 # 必须一次 slurp 完再按行切，不能用 while-read + arr+=()：
 # zsh 的数组 append 每次都要重新分配整个数组，于是这一段是 O(n^2)。
@@ -484,16 +489,16 @@ _pkg_read_rows() {
   lines=("${(@f)$(cat)}")
   # 命令替换会吃掉尾部换行，按行切完末尾可能多出一个空元素。
   # ${(@)arr:#} 用空模式删掉所有空串，等价于原来的 [[ -z $line ]] && continue。
-  _PKG_ROWS=("${(@)lines:#}")
+  _FC_ROWS=("${(@)lines:#}")
 }
 
-# 该视图能不能走流式路径（不落 _PKG_ROWS，直接把查询结果管道给 fzf）。
+# 该视图能不能走流式路径（不落 _FC_ROWS，直接把查询结果管道给 fzf）。
 #
 # 两个条件都要满足：
 #   1. cols 只声明一列。单列视图里 _pkg_display 的净效果就是「取首字段」——
 #      首列原样输出、不补齐、不上色，于是整层可以退化成 cut -f1。
 #   2. 视图的动作里没有一个是 mutating。没有 mutating 就没有删行，
-#      _PKG_ROWS 也就没有存在理由。
+#      _FC_ROWS 也就没有存在理由。
 #
 # 满足时 _pkg_feed 的候选链是
 #     _pkg_query | cut -f1 | grep -v '^$' | fzf
@@ -511,7 +516,7 @@ _pkg_streamable() {        # $1=eco $2=view -> 返回 0 表示可流式
   acts=(${(s: :)$(_pkg_view_get "$eco" "$view" actions)})
   (( ${#acts} )) || acts=(${(s: :)$(_pkg_get "$eco" actions)})
   _pkg_view_mutating "$eco" "$view"
-  muts=("${_PKG_MUTATING[@]}")
+  muts=("${_FC_MUTATING[@]}")
   for a in "${acts[@]}"; do
     for m in "${muts[@]}"; do
       [[ $a == "$m" ]] && return 1
@@ -528,14 +533,14 @@ _pkg_streamable() {        # $1=eco $2=view -> 返回 0 表示可流式
 _pkg_feed() {
   local eco=$1 view=$2
   shift 2
-  if (( _PKG_STREAM )); then
+  if (( _FC_STREAM )); then
     _pkg_query "$eco" "$view" | cut -f1 | grep -v '^$' | _pkg_read "$@"
   else
     # 列表被清空时（最后一轮 mutating 全删完）不能让 print 打出一个空行 ——
     # 那会变成一条空白候选，让用户能选中它。直接不发任何行，fzf 立刻退出，
     # 与 _pkg_display 在空表时 return 0 的效果一致。
-    if (( ${#_PKG_ROWS} )); then
-      print -rl -- "${_PKG_ROWS[@]}" | _pkg_display "$eco" "$view" | _pkg_read "$@"
+    if (( ${#_FC_ROWS} )); then
+      print -rl -- "${_FC_ROWS[@]}" | _pkg_display "$eco" "$view" | _pkg_read "$@"
     fi
   fi
 }
@@ -553,16 +558,16 @@ _pkg_query() {
 _pkg_drop() {
   local name=$1 line
   local -a keep
-  for line in "${_PKG_ROWS[@]}"; do
+  for line in "${_FC_ROWS[@]}"; do
     [[ ${line%%$'\t'*} == "$name" ]] || keep+=("$line")
   done
-  _PKG_ROWS=("${keep[@]}")
+  _FC_ROWS=("${keep[@]}")
 }
 
 # 动作派发完全由注册表决定，驱动里不出现任何具体动作名：
-#   PKG[<eco>:<act>] 存在 -> 专用处理器，收一个包名参数
+#   _FC_REG[<eco>:<act>] 存在 -> 专用处理器，收一个包名参数
 #                       （rollback / info / deps / homepage / use / ...）
-#   否则               -> PKG[<eco>:runner] 原生透传，收 (act, 包名)
+#   否则               -> _FC_REG[<eco>:runner] 原生透传，收 (act, 包名)
 _pkg_act() {               # $1=eco $2=view $3=act $4=name
   local act=$3 fn
   fn=$(_pkg_get "$1" "$act")
@@ -574,31 +579,31 @@ _pkg_act() {               # $1=eco $2=view $3=act $4=name
   fi
 }
 
-_pkg_view_actions() {      # $1=eco $2=view -> _PKG_ACTIONS（无动作则返回 1）
+_pkg_view_actions() {      # $1=eco $2=view -> _FC_ACTIONS（无动作则返回 1）
   local -a acts
   acts=(${(s: :)$(_pkg_view_get "$1" "$2" actions)})
   (( ! ${#acts} )) && acts=(${(s: :)$(_pkg_get "$1" actions)})
   (( ${#acts} )) || return 1
-  _PKG_ACTIONS=("${acts[@]}")
+  _FC_ACTIONS=("${acts[@]}")
 }
 
 _pkg_actions() {           # $1=eco $2=view
   _pkg_view_actions "$1" "$2" || return 1
-  print -l -- "${_PKG_ACTIONS[@]}" | _pkg_read
+  print -l -- "${_FC_ACTIONS[@]}" | _pkg_read
 }
 
 # 会把行移出列表的动作。view 级覆盖优先，缺了才回退到 eco 级。
 # 同样把解析拆出来，测试才能走真实路径而不是自己拼一遍 key。
-_pkg_view_mutating() {     # $1=eco $2=view -> _PKG_MUTATING
+_pkg_view_mutating() {     # $1=eco $2=view -> _FC_MUTATING
   local -a m
   m=(${(s: :)$(_pkg_view_get "$1" "$2" mutating)})
   (( ! ${#m} )) && m=(${(s: :)$(_pkg_get "$1" mutating)})
-  _PKG_MUTATING=("${m[@]}")
+  _FC_MUTATING=("${m[@]}")
 }
 
 # 回滚到指定版本。versions 列表只在此处取一次，不随 session 缓存。
 #
-# 三个数据键刻意不叫 versions / current / install：_pkg_act 用 PKG[<eco>:<动作名>]
+# 三个数据键刻意不叫 versions / current / install：_pkg_act 用 _FC_REG[<eco>:<动作名>]
 # 查专用处理函数，而 install 正是 search 视图的合法动作名。叫 install 的话，
 # 用户选「install」会命中回滚用的安装器，而且只收到包名一个参数。
 # 加 version- 前缀就不会和动作名相撞。
@@ -632,23 +637,23 @@ _pkg_rollback() {          # $1=eco $2=pkg
 # 只读动作传 0 —— 失败不停止，因为只读动作没有改变任何状态，
 # 中止没有意义，「失败」也往往只是「没有结果」（例如 brew uses 查不到依赖）。
 #
-# 结果放进 _PKG_DONE / _PKG_FAILED，由 _pkg_session 决定要不要删行。
+# 结果放进 _FC_DONE / _FC_FAILED，由 _pkg_session 决定要不要删行。
 _pkg_apply() {           # $1=eco $2=view $3=act $4=mutating?
   local eco=$1 view=$2 act=$3 strict=$4 p name
-  _PKG_DONE=()
-  _PKG_FAILED=()
-  _PKG_RC=0
-  for p in "${(@f)_PKG_PICKED}"; do
+  _FC_DONE=()
+  _FC_FAILED=()
+  _FC_RC=0
+  for p in "${(@f)_FC_PICKED}"; do
     # ${p%%$'\t'*} 取到的就是干净 name —— _pkg_display 把对齐填充放在
     # 第一个 tab 之后，所以这里不需要额外剥空格
     name=${p%%$'\t'*}
     if _pkg_act "$eco" "$view" "$act" "$name"; then
-      _PKG_DONE+=("$name")
+      _FC_DONE+=("$name")
       print
     else
       # 退出码必须第一个取：下面追加数组就会清掉 $?
-      _PKG_RC=$?
-      _PKG_FAILED+=("$name")
+      _FC_RC=$?
+      _FC_FAILED+=("$name")
       (( strict )) && return 1
     fi
   done
@@ -661,13 +666,13 @@ _pkg_report() {          # $1=act
   print -r -- ""
   # 130 = 128 + SIGINT。下载 formulae 时 Ctrl-C 是很常见的操作，
   # 说成「失败」会让用户以为包坏了，而实际上什么都没变。
-  if (( _PKG_RC == 130 )); then
-    print -r -- "  ${_PKG_FAILED[1]}: 动作 '$1' 被 Ctrl-C 中断，已停止"
+  if (( _FC_RC == 130 )); then
+    print -r -- "  ${_FC_FAILED[1]}: 动作 '$1' 被 Ctrl-C 中断，已停止"
   else
-    print -r -- "  ${_PKG_FAILED[1]}: 动作 '$1' 失败（退出码 $_PKG_RC），已停止"
+    print -r -- "  ${_FC_FAILED[1]}: 动作 '$1' 失败（退出码 $_FC_RC），已停止"
   fi
-  (( ${#_PKG_DONE} )) && print -r -- "  已完成 ${#_PKG_DONE} 项并移出列表"
-  print -r -- "  其余 ${_PKG_PENDING} 项未执行，仍在列表里"
+  (( ${#_FC_DONE} )) && print -r -- "  已完成 ${#_FC_DONE} 项并移出列表"
+  print -r -- "  其余 ${_FC_PENDING} 项未执行，仍在列表里"
 }
 
 # view 循环：缓冲路径整轮 session 只查询一次，动作后从内存删行，不重查、不落盘；
@@ -676,25 +681,25 @@ _pkg_session() {           # $1=eco $2=view
   local eco=$1 view=$2 sel act p
   local -i strict
   local -a picked mutating loop opt
-  typeset -ga _PKG_PICKED _PKG_DONE _PKG_FAILED
-  typeset -gi _PKG_PENDING _PKG_RC _PKG_STREAM
+  typeset -ga _FC_PICKED _FC_DONE _FC_FAILED
+  typeset -gi _FC_PENDING _FC_RC _FC_STREAM
 
   header=$(_pkg_view_get "$eco" "$view" title)
   [[ -n $header ]] || header=$(_pkg_get "$eco" title)
   _pkg_view_mutating "$eco" "$view"
-  mutating=("${_PKG_MUTATING[@]}")
+  mutating=("${_FC_MUTATING[@]}")
   loop=(${(s: :)$(_pkg_get "$eco" loop)})
   opt=(${(s: :)$(_pkg_view_get "$eco" "$view" opt)})
 
-  _PKG_STREAM=0
+  _FC_STREAM=0
   if _pkg_streamable "$eco" "$view"; then
-    _PKG_STREAM=1
-    # 清掉上一个 view 可能留下的行。流式路径不读它，但 _PKG_ROWS 是全局的，
+    _FC_STREAM=1
+    # 清掉上一个 view 可能留下的行。流式路径不读它，但 _FC_ROWS 是全局的，
     # 留着上一批数据只会让人误以为本视图也缓冲过。
-    _PKG_ROWS=()
+    _FC_ROWS=()
   else
     _pkg_query "$eco" "$view" | _pkg_read_rows
-    if (( ! ${#_PKG_ROWS} )); then
+    if (( ! ${#_FC_ROWS} )); then
       _fzf_msg "Nothing to show." "$header" && return 0
     fi
   fi
@@ -708,7 +713,7 @@ _pkg_session() {           # $1=eco $2=view
     # 是非法语法，且只在运行时才报 bad substitution —— zsh -n 检查不出来。
     picked=("${(@f)sel}")
     (( ${#picked} )) || continue
-    _PKG_PICKED=("${picked[@]}")
+    _FC_PICKED=("${picked[@]}")
 
     # 内层：动作菜单。非 mutating 且在 loop 列表中的动作会留在原地，
     # 沿用旧驱动「同一选择可连续执行多个只读动作」的行为。
@@ -722,7 +727,7 @@ _pkg_session() {           # $1=eco $2=view
       if _pkg_apply "$eco" "$view" "$act" "$strict"; then
         # 全部成功
         if (( strict )); then
-          for p in "${_PKG_DONE[@]}"; do _pkg_drop "$p"; done
+          for p in "${_FC_DONE[@]}"; do _pkg_drop "$p"; done
           break
         fi
         (( ${loop[(Ie)$act]} )) || break
@@ -731,8 +736,8 @@ _pkg_session() {           # $1=eco $2=view
 
       # 只有 mutating 动作会走到这里。成功的那几个已经生效，必须移出列表，
       # 否则用户会以为它们还在；失败项与未执行项保持原样，可直接重试。
-      for p in "${_PKG_DONE[@]}"; do _pkg_drop "$p"; done
-      _PKG_PENDING=$(( ${#_PKG_PICKED} - ${#_PKG_DONE} - ${#_PKG_FAILED} ))
+      for p in "${_FC_DONE[@]}"; do _pkg_drop "$p"; done
+      _FC_PENDING=$(( ${#_FC_PICKED} - ${#_FC_DONE} - ${#_FC_FAILED} ))
       _pkg_report "$act"
       break
     done
@@ -742,7 +747,6 @@ _pkg_session() {           # $1=eco $2=view
 _pkg_cmd() {               # $1=eco
   local eco=$1 v
   local -a views
-  _pkg_ready || return 1
   views=(${(s: :)$(_pkg_get "$eco" views)})
   (( ${#views} )) || return 1
   header=$(_pkg_get "$eco" title)

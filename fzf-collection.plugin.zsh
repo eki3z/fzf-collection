@@ -46,13 +46,13 @@ source "${0:h:A}/base.zsh"
 #
 # 关闭时 _fzf_prefix 什么都不输出，于是行内容与开启时逐字节相同 ——
 # 只是没有转义序列。对齐、补齐、取值都不受影响。
-typeset -gi _FZF_COLOR=1
+typeset -gi _FC_COLOR=1
 if [[ -z ${FZF_COLLECTION_COLOR:-} ]]; then
   if [[ -n ${NO_COLOR:-} ]] || [[ ${TERM:-dumb} == dumb ]] || [[ ! -t 1 ]]; then
-    _FZF_COLOR=0
+    _FC_COLOR=0
   fi
 else
-  [[ ${FZF_COLLECTION_COLOR} == 0 ]] && _FZF_COLOR=0 || _FZF_COLOR=1
+  [[ ${FZF_COLLECTION_COLOR} == 0 ]] && _FC_COLOR=0 || _FC_COLOR=1
 fi
 
 for f in "${FZF_COLLECTION_MODULES[@]}"; do

@@ -12,9 +12,9 @@ _brewf() {
   brew "$@"
 }
 
-# 列表函数在 while 循环里用到的分隔符。必须先声明：循环体内的 local 会让
-# zsh 5.9 往 stdout 打一行变量赋值，混进喂给 fzf 的候选列表。
-typeset -g _B_TAB=$'\t'
+# 分隔符用 base.zsh 的 _FC_TAB。这里原来自己声明过一份 _FC_TAB，四个
+# collection 各有一份，同一段「为什么必须先落到变量」的说明也复制了四遍，
+# 而读者永远不会同时打开四个文件。
 
 # ---- 列表查询：输出 name<TAB>rest ----
 
@@ -31,7 +31,7 @@ _brewf_list_outdated() {
     f=(${(z)line})
     (( ${#f} >= 4 )) || continue
     name=${f[1]}
-    print -r -- "$name${_B_TAB}${f[2]}${_B_TAB}=>${_B_TAB}${f[4]}"
+    print -r -- "$name${_FC_TAB}${f[2]}${_FC_TAB}=>${_FC_TAB}${f[4]}"
   done
 
   # # NOTE time consuming is as twice as above
@@ -46,7 +46,7 @@ _brewf_list_installed() {
   _brewf list --versions | while IFS= read -r line; do
     f=(${(z)line})
     (( ${#f} >= 2 )) || continue
-    print -r -- "${f[1]}${_B_TAB}${(j:|:)f[2,-1]}"
+    print -r -- "${f[1]}${_FC_TAB}${(j:|:)f[2,-1]}"
   done
 
   # # NOTE time consuming is as twice as above
@@ -61,7 +61,7 @@ _brewf_list_pinned() {
   brew ls --pinned --versions | while IFS= read -r line; do
     f=(${(z)line})
     (( ${#f} >= 2 )) || continue
-    print -r -- "${f[1]}${_B_TAB}${(j:|:)f[2,-1]}"
+    print -r -- "${f[1]}${_FC_TAB}${(j:|:)f[2,-1]}"
   done
 }
 
@@ -175,11 +175,7 @@ _brewf_act() {
 
 # ---- 注册表 ----
 
-# base.zsh 已用 typeset -gA 声明过；这里再确认一次，使本文件即使被单独 source
-# 也不会把 PKG 变成普通数组（下标里的 ':' 会被当成算术求值）。
-[[ ${(t)PKG} == association ]] || typeset -gA PKG
-
-PKG+=(
+_FC_REG+=(
   'brew:title'  'Brew'
   'brew:views'  'outdated search manage pinned tap'
   'brew:runner' '_brewf_act'

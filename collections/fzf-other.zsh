@@ -7,7 +7,7 @@
 # 这两个命令（pathf / envf）不是包管理器，没有 view 与 action 的概念，
 # 所以不进注册表，各自带一个 header 变量。
 
-# pathf 与 envf 的 fzf 调用显式带 --ansi。_fzf_opts 里默认也有（见
+# pathf 与 envf 的 fzf 调用显式带 --ansi。_FC_OPTS 里默认也有（见
 # fzf-collection.plugin.zsh 的 FZF_COLLECTION_OPTS 默认值），但那是用户可覆盖的
 # 变量 —— 一旦有人设 FZF_COLLECTION_OPTS 时漏掉 --ansi，_fzf_format 加的颜色
 # 就会被 fzf 当普通文本：不上色，还把 \e[34m 的 5+4 个字节算进显示宽度，
@@ -24,7 +24,7 @@
 # 这里改成「首个字段之后全都要」，把值完整带出来。
 #
 # 颜色码：fzf 带 --ansi 时输出已经剥掉了颜色，所以这步只是兜底。
-# 原来这里是掐固定的首尾两段（'$_FZF_BLUE' 前缀、'$_FZF_RESET' 后缀），
+# 原来这里是掐固定的首尾两段（'$_FZF_BLUE' 前缀、'$_FC_SGR_RESET' 后缀），
 # 也就是把剥色和**当前配色**绑死了：换成别的颜色后它会静默失效，而且因为
 # 上面那条 --ansi 已经剥过一次，失效也不报错。现在统一走 _fzf_unpaint，
 # 认的是 SGR 序列本身，与用哪套配色无关。
@@ -55,7 +55,7 @@ pathf() {
   done \
     | _fzf_format \
     | uniq \
-    | fzf "${_fzf_opts[@]}" --ansi --header "$(_fzf_underline "$header")" --tiebreak=index \
+    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fzf_underline "$header")" --tiebreak=index \
     | while IFS= read -r line; do
         # 原来这里是 `| perl -lane "$rule"`，$rule 为
         #   printf "%s/%s", glob($F[$#F]), $F[0]   （或 -d 时 printf "%s/", glob(...)）
@@ -107,7 +107,7 @@ envf() {
   done < <(printenv --null) \
     | sort -u \
     | _fzf_format \
-    | fzf "${_fzf_opts[@]}" --ansi --header "$(_fzf_underline "$header")" \
+    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fzf_underline "$header")" \
     | while IFS= read -r line; do
         # 显示行里的值已被截断，所以按 key 从环境重新取完整值。
         key=${line%%[[:space:]]*}

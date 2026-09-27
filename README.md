@@ -28,7 +28,7 @@ A collection of commands to enhance commandline with [FZF](https://github.com/ju
     - [FZF_COLLECTION_MODULES](#fzf_collection_modules)
     - [FZF_COLLECTION_OPTS](#fzf_collection_opts)
     - [_ENVF_VALMAX](#_envf_valmax)
-    - [_PKG_COLSEP](#_pkg_colsep)
+    - [_FC_COLUMN_GAP](#_fc_column_gap)
     - [_UVF_INDEX](#_uvf_index)
     - [_UVF_PYPI_JSON](#_uvf_pypi_json)
   - [Colours](#colours)
@@ -257,12 +257,12 @@ in the list. Defaults to `80`. Lower it if you use a narrow terminal.
 export _ENVF_VALMAX=60
 ```
 
-### _PKG_COLSEP
+### _FC_COLUMN_GAP
 
 All `*-f` views. Number of spaces between columns. Defaults to `5`.
 
 ```sh
-export _PKG_COLSEP=3
+export _FC_COLUMN_GAP=3
 ```
 
 ### _UVF_INDEX

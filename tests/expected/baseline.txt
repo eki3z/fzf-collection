@@ -89,7 +89,7 @@ left-pad
   显示行=[my package]
   name=[my package]
 
-===== _PKG_ROWS 保持干净（未被显示层污染） =====
+===== _FC_ROWS 保持干净（未被显示层污染） =====
   [alpha	1 beta	2 a-very-long-name	3]
 
 ===== 字符级断言：不得出现字面反斜杠 =====
@@ -116,7 +116,7 @@ left-pad
   n=2  [ab	2 axb	3]
 
 ===== 对照：glob 写法会误伤（这就是不用它的原因） =====
-  ${(@)_PKG_ROWS:#*x*} -> n=1 （3 行被全删）
+  ${(@)_FC_ROWS:#*x*} -> n=1 （3 行被全删）
 
 ===== act / mutating / loop =====
   update     -         -
@@ -159,7 +159,7 @@ left-pad
   pnpm   title=[Pnpm] views=[outdated search manage]
   pip    title=[Pip] views=[outdated search manage]
 
-===== 对照组：PKG=(...) 替换，PKG+=(...) 才合并 =====
+===== 对照组：_FC_REG=(...) 替换，_FC_REG+=(...) 才合并 =====
   T=([x:1] [x:2]) 后再 T=([y:1])  -> 条目数=1  （1 = 被替换）
   改用 T+=([y:1])               -> 条目数=3  （3 = 正确合并）
 
@@ -184,7 +184,7 @@ left-pad
   每个 view 都声明了 title/actions/cols 的：是
   已登记的 ecosystem：gem uv pip brew npm pnpm gh
 
-===== 键形状：每个三段键的第二段 X 必须有 PKG[<eco>:X:title] =====
+===== 键形状：每个三段键的第二段 X 必须有 _FC_REG[<eco>:X:title] =====
   OK 全部 7 个 ecosystem 的三段键顺序一致
 
 ===== 驱动解析：每个 view 的动作清单都非空（回车必须有子菜单） =====
@@ -271,7 +271,7 @@ left-pad
 
   fzf#3 收到 2 个候选: alpha,beta
   查询被调用 2 次（2 = 列表 + 动作后回到列表）
-  _PKG_ROWS 长度 0（0 = 流式路径不缓冲）
+  _FC_ROWS 长度 0（0 = 流式路径不缓冲）
   动作收到: act=show pkg=[alpha]
   fzf 共被调用 3 次（3 = 列表 + 子菜单 + 取消）
 
@@ -418,11 +418,11 @@ watchdog->6.0.0]
   OK   column 在代码中 0 次调用，README 未声称需要
 
 ===== 可配置项：代码里每个可覆盖的变量都必须在 README 里有，且名字一致 =====
-  OK   _PKG_COLSEP 有文档
+  OK   _FC_COLUMN_GAP 有文档
   OK   _ENVF_VALMAX 有文档
   OK   _UVF_INDEX 有文档
   OK   _UVF_PYPI_JSON 有文档
-  代码里可覆盖的插件变量共 4 个：_PKG_COLSEP _ENVF_VALMAX _UVF_INDEX _UVF_PYPI_JSON
+  代码里可覆盖的插件变量共 4 个：_FC_COLUMN_GAP _ENVF_VALMAX _UVF_INDEX _UVF_PYPI_JSON
 
 ===== clone 地址必须指向本仓库，不能是上游 =====
   origin = github.com/eki3z/fzf-collection
@@ -435,7 +435,7 @@ watchdog->6.0.0]
   OK   pnpm 的 outdated 用 jq，README 也列了
   OK   pip 的 outdated 用 jq，README 也列了
 
-===== FZF_COLLECTION_OPTS 必须与 _fzf_opts 逐项一致 =====
+===== FZF_COLLECTION_OPTS 必须与 _FC_OPTS 逐项一致 =====
   OK   一致
 
 ### END

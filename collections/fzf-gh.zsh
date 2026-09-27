@@ -33,11 +33,7 @@ _ghf_act() {
 
 # ---- 注册表 ----
 
-# base.zsh 已用 typeset -gA 声明过；这里再确认一次，使本文件即使被单独 source
-# 也不会把 PKG 变成普通数组（下标里的 ':' 会被当成算术求值）。
-[[ ${(t)PKG} == association ]] || typeset -gA PKG
-
-PKG+=(
+_FC_REG+=(
   'gh:title'  'Gh'
   'gh:views'  'repos'
   'gh:runner' '_ghf_act'
