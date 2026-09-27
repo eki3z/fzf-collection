@@ -300,7 +300,7 @@ _fc_split_row() {        # $1=line -> _FC_FIELDS
 # 配合 --tabstop=1（tab 渲染成 1 个空格）得到旧版 column -t 的对齐效果。
 _fc_render() {           # $1=eco $2=view
   local eco=$1 view=$2
-  local line cell seg out k first
+  local line cell seg out k first w
   local -a cols widths flds segs
   local -a pre post
   local i nf n
@@ -357,10 +357,24 @@ _fc_render() {           # $1=eco $2=view
         # name 保持原样，补齐另起一个 tab 段，取名因此无需剥空格。
         # 单列（search 之类）后面没有别的列，补齐段只会给每行留下尾部
         # tab 和空白 —— 既难看，又会让 fzf 的匹配把尾部空白算进去。
+        #
+        # ${(l:N:: :)} 的值是空串，所以它不是「把某个值左对齐到 N」，
+        # 而是**生成 N 个空格**，作为一个独立的 tab 段。两个地方在 nounset 下
+        # 会失败，都是静默把整个列表变空：
+        #   1. 算式不能直接写在 flag 参数里（${(l:$(( ... )):: :)}）
+        #   2. 值不能省略 —— ${(l:$w:: :)} 后面什么都不给，zsh 当成引用了一个
+        #      未定义的参数，报 "parameter not set"。要给 ${:-}。
         segs+=("$cell")
-        (( nf > 1 )) && segs+=("${(l:$(( widths[1] - ${#cell} )):: :)}")
+        if (( nf > 1 )); then
+          w=$(( widths[1] - ${#cell} ))
+          segs+=("${(l:$w:: :)${:-}}")
+        fi
       else
-        (( i < nf )) && cell="${(r:$widths[i]:: :)cell}"
+        # 同理：宽度先落到变量，flag 参数里不写 $widths[i]
+        if (( i < nf )); then
+          w=$widths[i]
+          cell="${(r:$w:: :)cell}"
+        fi
         segs+=("$pre[i]$cell$post[i]")
       fi
     done

@@ -4,7 +4,7 @@
 # body 全部是 zsh 代码，可自由使用 zsh 特性。
 
 # set options if not defined
-if [ -z "$FZF_COLLECTION_OPTS" ]; then
+if [[ -z ${FZF_COLLECTION_OPTS:-} ]]; then
   FZF_COLLECTION_OPTS="
   --header-first
   --ansi
@@ -19,7 +19,7 @@ if [ -z "$FZF_COLLECTION_OPTS" ]; then
   --bind=ctrl-u:cancel,ctrl-l:jump,ctrl-t:toggle-all,ctrl-v:clear-selection"
 fi
 
-if [ -z "$FZF_COLLECTION_MODULES" ]; then
+if [[ -z ${FZF_COLLECTION_MODULES:-} ]]; then
   FZF_COLLECTION_MODULES=(
     brew
     npm
