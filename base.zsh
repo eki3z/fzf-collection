@@ -129,34 +129,30 @@ typeset -g _FC_SGR_RESET=$'\e[0m'
 # 的赋值出不来，去重就失效了；而这里每个 view 每次渲染都要问一次颜色，
 # 走命令替换还白白 fork 一次。约定与 _FC_FIELDS / _FC_MUTATING 一致。
 #
-# spec 有三种写法：
-#   空 / 0 / -            不着色
-#   数字与分号（34、1;32）  原样当 SGR 参数
-#   其余                  查 _FC_SGR 的角色名
+# spec 就是 _FC_SGR 的键，也就是角色名。空串与未定义的名字都表示不上色 ——
+# 上不上色是**调色板的值**（name 与 sep 的值就是空串），不是 spec 自己的写法。
 #
-# 数字那条是为兼容旧的 cols 声明（'0,34,0,33'）留的，两种写法都认。
+# 这里原来还认两种写法，都删了：
+#   0 与 -           「不上色」的旧写法。现在由角色名表达，值在调色板里。
+#   34、1;32 等数字  把 SGR 参数直接写进注册表。删掉的理由不是兼容，是它让
+#                    cols 一个列表里混着两种类型：'0,34,0,33' 里的 0 是
+#                    「不着色」而 34 是「蓝色」，一个是开关一个是参数。
+# 删掉之后写错的名字（含数字）一律告警并降级 —— 以前 0 静默合法，
+# 而拼错一个角色名和它长得一模一样。
 _fc_sgr_prefix() {            # $1=spec
   local s=$1
   _FC_SGR_PREFIX=''
-  if [[ -z $s || $s == 0 || $s == - ]]; then
-    return 0
-  elif [[ $s == *[!0-9\;]* ]]; then
-    # 查表前先挡掉含 ']' 的输入：[[ -v _FC_SGR[$s] ]] 里 zsh 会把括号里的内容
-    # 当下标表达式求值，而 spec 是注册表字符串里的数据，不能假定它老实。
-    if [[ $s == *[^a-z0-9_-]* ]] || [[ ! -v _FC_SGR[$s] ]]; then
-      if (( ! _FC_SGR_WARNED )); then
-        _FC_SGR_WARNED=1
-        print -ru2 -- "fzf-collection: 未知配色角色 '${s}'，按不上色处理"
-      fi
-      return 0
+  [[ -n $s ]] || return 0
+  # 挡掉含 ']' 的输入：[[ -v _FC_SGR[$s] ]] 里 zsh 会把括号里的内容当下标
+  # 表达式求值，而 spec 是注册表字符串里的数据，不能假定它老实。
+  if [[ $s == *[^a-z0-9_-]* ]] || [[ ! -v _FC_SGR[$s] ]]; then
+    if (( ! _FC_SGR_WARNED )); then
+      _FC_SGR_WARNED=1
+      print -ru2 -- "fzf-collection: 未知配色角色 '${s}'，按不上色处理"
     fi
-    s=${_FC_SGR[$s]}
-    [[ -n $s ]] || return 0
-  else
-    # $'\e[' 与参数之间不能加引号以外的任何东西，也不能写成 "$'\e['" ——
-    # 和上面同一个陷阱：双引号里 $'…' 不求值。
-    s=$'\e['${s}'m'
+    return 0
   fi
+  s=${_FC_SGR[$s]}
   # 角色合法性先判、开关后判：配置写错时即便颜色关着也要报。
   (( _FC_COLOR )) || return 0
   _FC_SGR_PREFIX=$s
@@ -234,7 +230,7 @@ typeset -g _FC_HEADER=''
 # 绝对不要写 ${_FC_REG[$eco:title]} —— zsh 会把 ':' 后的首字母当成参数修饰符：
 #   :h head  :t tail  :r root  :e extension  :s suffix  :l lower  :u upper
 # 于是 $eco:title 里的 ':t' 被解释成 tail，返回空字符串且没有任何报错。
-# 受影响的字段名（本项目全部踩过）：title / loop / runner / homepage /
+# 受影响的字段名（本项目全部踩过）：title / stay / fallback / homepage /
 # rollback / search / tap。views / info / install 只是恰好没撞上。
 _fc_reg_get() {
   local key=$1 part
@@ -320,7 +316,7 @@ _fc_render() {           # $1=eco $2=view
 
   cols=(${(s: :)$(_fc_reg_view_get "$eco" "$view" cols)})
   nf=$#cols
-  (( nf )) || { cols=(0); nf=1 }
+  (( nf )) || { cols=(name); nf=1 }
 
   # 逐列的着色前后缀在这里一次解析好，循环内只做字符串拼接。
   #
@@ -489,14 +485,14 @@ _fc_drop_row() {
 # 动作派发完全由注册表决定，驱动里不出现任何具体动作名：
 #   _FC_REG[<eco>:<act>] 存在 -> 专用处理器，收一个包名参数
 #                       （rollback / info / deps / homepage / use / ...）
-#   否则               -> _FC_REG[<eco>:runner] 原生透传，收 (act, 包名)
+#   否则               -> _FC_REG[<eco>:fallback] 原生透传，收 (act, 包名)
 _fc_act() {               # $1=eco $2=view $3=act $4=name
   local act=$3 fn
   fn=$(_fc_reg_get "$1" "$act")
   if [[ -n $fn ]]; then
     "$fn" "$4"
   else
-    fn=$(_fc_reg_get "$1" runner) || return 1
+    fn=$(_fc_reg_get "$1" fallback) || return 1
     "$fn" "$act" "$4"
   fi
 }
@@ -528,15 +524,15 @@ _fc_reg_view_mutating() {     # $1=eco $2=view -> _FC_MUTATING
 # 三个数据键刻意不叫 versions / current / install：_fc_act 用 _FC_REG[<eco>:<动作名>]
 # 查专用处理函数，而 install 正是 search 视图的合法动作名。叫 install 的话，
 # 用户选「install」会命中回滚用的安装器，而且只收到包名一个参数。
-# 加 version- 前缀就不会和动作名相撞。
+# 三个都写成「动词-名词」，于是 install-version 不会和动作名 install 相撞。
 _fc_rollback() {          # $1=eco $2=pkg
   local eco=$1 pkg=$2 versions old new fn
-  fn=$(_fc_reg_get "$eco" version-list) || return 1
+  fn=$(_fc_reg_get "$eco" list-versions) || return 1
   versions=$("$fn" "$pkg")
   if [[ -z $versions ]]; then
     _fc_msg "No versions." "$pkg" && return 0
   fi
-  old=$("$(_fc_reg_get "$eco" version-current)" "$pkg")
+  old=$("$(_fc_reg_get "$eco" current-version)" "$pkg")
   _fc_msg "${old:-Not-installed}" "$pkg"
   new=$(print -l -- ${(f)versions} | _fc_fzf_read)
   if [[ -z $new ]]; then
@@ -546,7 +542,7 @@ _fc_rollback() {          # $1=eco $2=pkg
   # 第 3 个参数是回滚前的版本。多数 ecosystem 用不到（直接装新版本即可），
   # 但 gem 需要先按旧版本定位安装目录并卸载，所以传过去。
   # 已有的 handler 只用 $1 $2，多传一个参数不影响。
-  "$(_fc_reg_get "$eco" version-install)" "$pkg" "$new" "$old"
+  "$(_fc_reg_get "$eco" install-version)" "$pkg" "$new" "$old"
 }
 
 # 对选中的一批包执行一个动作。
@@ -602,7 +598,7 @@ _fc_report() {          # $1=act
 _fc_session() {           # $1=eco $2=view
   local eco=$1 view=$2 sel act p
   local -i strict
-  local -a picked mutating loop opt
+  local -a picked mutating stay fzfopts
   typeset -ga _FC_PICKED _FC_DONE _FC_FAILED
   typeset -gi _FC_PENDING _FC_RC _FC_STREAM
 
@@ -610,8 +606,8 @@ _fc_session() {           # $1=eco $2=view
   [[ -n $_FC_HEADER ]] || _FC_HEADER=$(_fc_reg_get "$eco" title)
   _fc_reg_view_mutating "$eco" "$view"
   mutating=("${_FC_MUTATING[@]}")
-  loop=(${(s: :)$(_fc_reg_get "$eco" loop)})
-  opt=(${(s: :)$(_fc_reg_view_get "$eco" "$view" opt)})
+  stay=(${(s: :)$(_fc_reg_get "$eco" stay)})
+  fzfopts=(${(s: :)$(_fc_reg_view_get "$eco" "$view" fzf-opts)})
 
   _FC_STREAM=0
   if _fc_view_streamable "$eco" "$view"; then
@@ -637,7 +633,7 @@ _fc_session() {           # $1=eco $2=view
     (( ${#picked} )) || continue
     _FC_PICKED=("${picked[@]}")
 
-    # 内层：动作菜单。非 mutating 且在 loop 列表中的动作会留在原地，
+    # 内层：动作菜单。非 mutating 且在 stay 列表中的动作会留在原地,
     # 沿用旧驱动「同一选择可连续执行多个只读动作」的行为。
     while :; do
       act=$(_fc_actions "$eco" "$view") || break
@@ -652,7 +648,7 @@ _fc_session() {           # $1=eco $2=view
           for p in "${_FC_DONE[@]}"; do _fc_drop_row "$p"; done
           break
         fi
-        (( ${loop[(Ie)$act]} )) || break
+        (( ${stay[(Ie)$act]} )) || break
         continue
       fi
 

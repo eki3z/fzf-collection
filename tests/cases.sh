@@ -231,14 +231,14 @@ t_case_drop_row() {
 # 10. 动作成员判定：${arr[(Ie)act]} 是驱动判断「删行回列表」还是
 #     「留在动作菜单」的唯一依据
 t_case_membership() {
-  local -a mutating loop
+  local -a mutating stay
   local act m l
   mutating=(uninstall)
-  loop=(homepage deps info)
-  t_sep "act / mutating / loop"
+  stay=(homepage deps info)
+  t_sep "act / mutating / stay"
   for act in update uninstall rollback install homepage deps info; do
     (( ${mutating[(Ie)$act]} )) && m=mutating || m='-'
-    (( ${loop[(Ie)$act]} )) && l=loop || l='-'
+    (( ${stay[(Ie)$act]} )) && l=stay || l='-'
     printf '  %-10s %-9s %s\n' "$act" "$m" "$l"
   done
 }
@@ -250,7 +250,7 @@ t_case_membership() {
 t_case_reg_get() {
   t_sep "首字母撞上修饰符的字段（这些曾全部静默返回空）"
   local f v
-  for f in title loop runner homepage rollback search; do
+  for f in title stay fallback homepage rollback search; do
     v=$(_fc_reg_get npm "$f")
     printf '  %-10s -> [%s]\n' "$f" "$v"
   done
@@ -261,7 +261,7 @@ t_case_reg_get() {
   done
   t_sep "view 专属字段"
   printf '  manage:title        -> [%s]\n' "$(_fc_reg_get npm manage title)"
-  printf '  search:opt          -> [%s]\n' "$(_fc_reg_get npm search opt)"
+  printf '  search:fzf-opts     -> [%s]\n' "$(_fc_reg_get npm search fzf-opts)"
   printf '  mutating:outdated   -> [%s]\n' "$(_fc_reg_get npm mutating outdated)"
   t_sep "对照：直接写变量下标会静默失败"
   local -A T
@@ -326,7 +326,7 @@ t_case_session_stdin() {
     'probe:manage:title'  'Probe Manage'
     'probe:manage:actions' 'uninstall'
     'probe:mutating'      'uninstall'
-    'probe:runner'        '_t_act_stub'
+    'probe:fallback'        '_t_act_stub'
   )
 
   _fc_session probe manage
@@ -335,7 +335,7 @@ t_case_session_stdin() {
   unfunction _fc_fzf_read _t_list_stub _t_act_stub
   eval "_fc_fzf_read() { $functions[_t_read_orig] }"
   unfunction _t_read_orig
-  for k in title views manage manage:title manage:actions mutating runner; do
+  for k in title views manage manage:title manage:actions mutating fallback; do
     unset "_FC_REG[probe:$k]"
   done
 }
@@ -407,7 +407,7 @@ t_case_registry() {
       acts=(${(s: :)$(_fc_reg_get $eco $view actions)})
       for act in $acts; do
         fn=$(_fc_reg_get $eco $act)
-        [[ -n $fn ]] || continue                  # 走 runner，不构成冲突
+        [[ -n $fn ]] || continue                  # 走 fallback，不构成冲突
         if (( ${providers[(Ie)$fn]} )); then
           missing=1
           printf '  *** 错误：%s/%s 的动作 %s 解析到数据提供函数 %s ***\n' $eco $view $act $fn
@@ -572,18 +572,18 @@ t_case_action_menu() {
     'probe2:manage:actions' 'show hide'
     'probe2:manage:cols'    'name have sep want'
     'probe2:mutating' 'hide'
-    'probe2:loop'     'show'
-    'probe2:runner'   '_t_probe_runner'
+    'probe2:stay'     'show'
+    'probe2:fallback'   '_t_probe_runner'
   )
 
   _fc_session probe2 manage
   print -r -- "  fzf 共被调用 $(<"$cnt") 次（4 = 列表 + 子菜单 + 回子菜单 + 取消）"
-  print -r -- "  剩余行数 ${#_FC_ROWS}（show 在 loop 里不该删行，应为 2）"
+  print -r -- "  剩余行数 ${#_FC_ROWS}（show 在 stay 里不该删行，应为 2）"
 
   unfunction _fc_fzf_read _t_probe_list _t_probe_runner
   eval "_fc_fzf_read() { $functions[_t_read_orig] }"
   unfunction _t_read_orig
-  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+  for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[probe2:$k]"
   done
   rm -f "$cnt" "$logf"
@@ -597,7 +597,7 @@ t_case_action_menu() {
 # 只读动作不中止，因为它没有改变任何状态，「失败」往往只是「没有结果」。
 t_case_failure() {
   local cnt logf line n log
-  local k runner
+  local k fallback
   local -a rows
   # local 而不是 typeset -g：stub _fc_fzf_read 是在 $(...) 子 shell 里被调的，
   # zsh 动态作用域照样看得到调用者的 local，但它不该以全局的形式活过本用例。
@@ -634,7 +634,7 @@ t_case_failure() {
   }
 
   t_sep "mutating 中途失败：立刻停止、只删成功项、失败项可重试"
-  runner=_t_p4_fail_second
+  fallback=_t_p4_fail_second
   SEL_ACT=go
   _FC_REG+=(
     'p4:title'  'P4'
@@ -644,19 +644,19 @@ t_case_failure() {
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
     'p4:mutating' 'go'
-    'p4:loop'     'peek'
-    'p4:runner'   "$runner"
+    'p4:stay'     'peek'
+    'p4:fallback'   "$fallback"
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
   _fc_session p4 manage
   log=$(<"$logf")
-  print -r -- "  runner 收到 ${#${(f)log}} 次调用: ${(j: :)${(f)log}}"
+  print -r -- "  fallback 收到 ${#${(f)log}} 次调用: ${(j: :)${(f)log}}"
   print -r -- "  DONE=${(j: :)_FC_DONE}  FAILED=${(j: :)_FC_FAILED}  未执行=${_FC_PENDING}"
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
   print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}"
-  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+  for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
 
@@ -670,8 +670,8 @@ t_case_failure() {
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
     'p4:mutating' 'go'
-    'p4:loop'     'peek'
-    'p4:runner'   '_t_p4_always_ok'
+    'p4:stay'     'peek'
+    'p4:fallback'   '_t_p4_always_ok'
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
@@ -679,7 +679,7 @@ t_case_failure() {
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
   print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 0）"
-  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+  for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
 
@@ -693,18 +693,18 @@ t_case_failure() {
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
     'p4:mutating' 'go'
-    'p4:loop'     'peek'
-    'p4:runner'   '_t_p4_always_err'
+    'p4:stay'     'peek'
+    'p4:fallback'   '_t_p4_always_err'
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
   _fc_session p4 manage
   log=$(<"$logf")
-  print -r -- "  runner 收到 ${#${(f)log}} 次调用（4 = 没提前中止）"
+  print -r -- "  fallback 收到 ${#${(f)log}} 次调用（4 = 没提前中止）"
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
   print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 4）"
-  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+  for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
 
@@ -718,8 +718,8 @@ t_case_failure() {
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
     'p4:mutating' 'go'
-    'p4:loop'     'peek'
-    'p4:runner'   '_t_p4_interrupt'
+    'p4:stay'     'peek'
+    'p4:fallback'   '_t_p4_interrupt'
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
@@ -727,7 +727,7 @@ t_case_failure() {
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
   print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 4，什么都没改成）"
-  for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
+  for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
 
@@ -825,8 +825,8 @@ t_case_stream() {
     # 唯一声明的 mutating 动作是 uninstall，而 search 的动作里没有它 ——
     # 交集为空正是可流式的判据
     's1:mutating'     'uninstall'
-    's1:loop'         'install'
-    's1:runner'       '_t_s_runner'
+    's1:stay'         'install'
+    's1:fallback'       '_t_s_runner'
   )
 
   _fc_session s1 search
@@ -840,7 +840,7 @@ t_case_stream() {
   eval "_fc_fzf_read() { $functions[_t_read_orig] }"
   eval "_fc_render() { $functions[_t_render_orig] }"
   unfunction _t_read_orig _t_render_orig
-  for k in title views search search:title search:actions search:cols mutating loop runner; do
+  for k in title views search search:title search:actions search:cols mutating stay fallback; do
     unset "_FC_REG[s1:$k]"
   done
   rm -f "$cnt" "$qcnt" "$logf"
@@ -1128,19 +1128,30 @@ t_case_palette() {
   local out p spec role i escf
   local -a colored plain stripped
 
-  t_sep "角色名 -> SGR 前缀"
-  for spec in name have sep want msg 0 - ''; do
+  t_sep "角色名 -> SGR 前缀（空串也合法：表示不上色且不告警）"
+  for spec in name have sep want msg ''; do
     _fc_sgr_prefix "$spec"
     p=$_FC_SGR_PREFIX
     print -r -- "  ${(qq)spec} -> ${(qq)p}"
   done
 
-  t_sep "数字 spec 仍认（旧的 cols 声明走这条兼容路）"
-  for spec in 34 33 1\;32; do
-    _fc_sgr_prefix "$spec"
+  t_sep "数字 spec 现在算未知名：告警并降级"
+  # 以前 34 / 1;32 是合法的 SGR 参数写法，0 与 - 是「不上色」。现在 spec 只能
+  # 是角色名，于是它们全走「未知名」那条路。这一条要断言，因为这是本次唯一一处
+  # **故意**让旧写法失效的改动。
+  escf=$(mktemp)
+  _FC_SGR_WARNED=0
+  local warned=0
+  for spec in 34 33 1\;32 0 -; do
+    _fc_sgr_prefix "$spec" 2>"$escf"
     p=$_FC_SGR_PREFIX
-    print -r -- "  ${(qq)spec} -> ${(qq)p}"
+    w=$(<"$escf")
+    [[ -n $w ]] && warned=1
+    print -r -- "  ${(qq)spec} -> [${(qq)p}]${w:+  告警: $w}"
   done
+  print -r -- "  只有第一条告警: $( (( warned )) && print yes || print no )（去重靠 _FC_SGR_WARNED）"
+  rm -f "$escf"
+  _FC_SGR_WARNED=0
 
   t_sep "未知角色名：降级为不上色 + 只告警一次"
   escf=$(mktemp)

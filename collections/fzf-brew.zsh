@@ -178,11 +178,11 @@ _brewf_act() {
 _FC_REG+=(
   'brew:title'  'Brew'
   'brew:views'  'outdated search manage pinned tap'
-  'brew:runner' '_brewf_act'
+  'brew:fallback' '_brewf_act'
 
   'brew:outdated'       '_brewf_list_outdated'
   'brew:outdated:title' 'Brew Outdated'
-  'brew:outdated:opt'   '--tiebreak=index'
+  'brew:outdated:fzf-opts'   '--tiebreak=index'
   'brew:outdated:actions' 'upgrade uninstall rollback options homepage info deps uses edit cat'
   'brew:outdated:cols'  'name have sep want'
 
@@ -219,7 +219,7 @@ _FC_REG+=(
   # 留在动作菜单里的动作。
   # link / unlink / pin 在旧版同样不删行、不回列表，就一直停在动作菜单上；
   # unlink 其实会改变 brew 状态却仍留在这里看着别扭，但这是旧行为，先照搬。
-  'brew:loop' 'install options homepage info deps uses edit cat link unlink pin'
+  'brew:stay' 'install options homepage info deps uses edit cat link unlink pin'
 
   'brew:rollback' '_brewf_rollback'
 )

@@ -88,7 +88,7 @@ _uvf_list_available() {
 # uv 装它们会失败并返回 2，驱动照实报出来。install 不是 mutating 动作，
 # 失败的行留在列表里可以改选 —— 与 pipf 的 search 同等待遇。
 
-# PyPI JSON API，供 version-list / info / deps / homepage 用。
+# PyPI JSON API，供 list-versions / info / deps / homepage 用。
 #
 # 刻意**不**跟着 _UVF_INDEX 走：镜像的 JSON 快照可能很旧（实测 tuna 的
 # /pypi/ruff/json 还停在 0.5.7，PyPI 已经是 0.16.9），而这四处都要新鲜的
@@ -200,11 +200,11 @@ _uvf_rollback() { _fc_rollback uv "$1" }
 _FC_REG+=(
   'uv:title'          'Uv'
   'uv:views'          'outdated search manage'
-  'uv:runner'         '_uvf_act'
+  'uv:fallback'         '_uvf_act'
 
   'uv:outdated'       '_uvf_list_outdated'
   'uv:outdated:title' 'Uv Tool Outdated'
-  'uv:outdated:opt'   '--tiebreak=index'
+  'uv:outdated:fzf-opts'   '--tiebreak=index'
   'uv:outdated:actions' 'upgrade uninstall rollback homepage deps info'
   'uv:outdated:cols'  'name have sep want'
 
@@ -224,15 +224,15 @@ _FC_REG+=(
   # upgrade 只在 outdated 出现、uninstall 只在 manage 出现，两个视图互不覆盖，
   # 所以在 eco 级声明一次就够，不必像 pipf 那样再写 view 级覆盖。
   'uv:mutating' 'upgrade uninstall'
-  'uv:loop'     'homepage deps info'
+  'uv:stay'     'homepage deps info'
 
   'uv:rollback'         '_uvf_rollback'
   'uv:info'             '_uvf_info'
   'uv:deps'             '_uvf_deps'
   'uv:homepage'         '_uvf_homepage'
-  'uv:version-list'     '_uvf_version_list'
-  'uv:version-current'  '_uvf_version_current'
-  'uv:version-install'  '_uvf_version_install'
+  'uv:list-versions'     '_uvf_version_list'
+  'uv:current-version'  '_uvf_version_current'
+  'uv:install-version'  '_uvf_version_install'
 )
 
 uvf() {

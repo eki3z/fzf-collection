@@ -111,11 +111,11 @@ _pipf_rollback() { _fc_rollback pip "$1" }
 _FC_REG+=(
   'pip:title'          'Pip'
   'pip:views'          'outdated search manage'
-  'pip:runner'         '_pipf_act'
+  'pip:fallback'         '_pipf_act'
 
   'pip:outdated'       '_pipf_list_outdated'
   'pip:outdated:title' 'Pip Outdated'
-  'pip:outdated:opt'   '--tiebreak=index'
+  'pip:outdated:fzf-opts'   '--tiebreak=index'
   'pip:outdated:actions' 'upgrade uninstall rollback deps use info'
   'pip:outdated:cols'  'name have sep want'
 
@@ -134,16 +134,16 @@ _FC_REG+=(
 
   'pip:mutating'           'uninstall'
   'pip:outdated:mutating'  'upgrade uninstall'
-  'pip:loop'           'homepage deps use info'
+  'pip:stay'           'homepage deps use info'
 
   'pip:rollback'       '_pipf_rollback'
   'pip:info'           '_pipf_info'
   'pip:deps'           '_pipf_deps'
   'pip:use'            '_pipf_use'
   'pip:homepage'       '_pipf_homepage'
-  'pip:version-list'     '_pipf_version_list'
-  'pip:version-current'  '_pipf_version_current'
-  'pip:version-install'  '_pipf_version_install'
+  'pip:list-versions'     '_pipf_version_list'
+  'pip:current-version'  '_pipf_version_current'
+  'pip:install-version'  '_pipf_version_install'
 )
 
 pipf() { _fc_cmd pip }

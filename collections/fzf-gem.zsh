@@ -122,11 +122,11 @@ _gemf_act() {
 _FC_REG+=(
   'gem:title'   'Gem'
   'gem:views'   'outdated search manage'
-  'gem:runner'  '_gemf_act'
+  'gem:fallback'  '_gemf_act'
 
   'gem:outdated'       '_gemf_list_outdated'
   'gem:outdated:title' 'Gem Outdated'
-  'gem:outdated:opt'   '--tiebreak=index'
+  'gem:outdated:fzf-opts'   '--tiebreak=index'
   'gem:outdated:actions' 'upgrade uninstall rollback deps info'
   'gem:outdated:cols'  'name have sep want'
 
@@ -147,15 +147,15 @@ _FC_REG+=(
   'gem:mutating'           'uninstall'
   'gem:outdated:mutating'  'upgrade uninstall'
   # 留在动作菜单里的动作：装完可以接着对同一批包做别的事
-  'gem:loop'          'install homepage deps info'
+  'gem:stay'          'install homepage deps info'
 
   'gem:rollback'  '_gemf_rollback'
   'gem:info'      '_gemf_info'
   'gem:deps'      '_gemf_deps'
   'gem:homepage'  '_gemf_homepage'
-  'gem:version-list'     '_gemf_version_list'
-  'gem:version-current'  '_gemf_version_current'
-  'gem:version-install'  '_gemf_version_install'
+  'gem:list-versions'     '_gemf_version_list'
+  'gem:current-version'  '_gemf_version_current'
+  'gem:install-version'  '_gemf_version_install'
 )
 
 gemf() {

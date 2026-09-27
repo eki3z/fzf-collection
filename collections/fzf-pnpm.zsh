@@ -63,17 +63,17 @@ _pnpmf_rollback() { _fc_rollback pnpm "$1" }
 _FC_REG+=(
   'pnpm:title'          'Pnpm'
   'pnpm:views'          'outdated search manage'
-  'pnpm:runner'         '_pnpmf_act'
+  'pnpm:fallback'         '_pnpmf_act'
 
   'pnpm:outdated'       '_pnpmf_list_outdated'
   'pnpm:outdated:title' 'Pnpm Outdated'
-  'pnpm:outdated:opt'   '--tiebreak=index'
+  'pnpm:outdated:fzf-opts'   '--tiebreak=index'
   'pnpm:outdated:actions' 'update remove rollback homepage deps info'
   'pnpm:outdated:cols' 'name have sep want'
 
   'pnpm:search'         '_pnpmf_list_available'
   'pnpm:search:title'   'Pnpm Search'
-  'pnpm:search:opt'     '--tiebreak=begin,length,index'
+  'pnpm:search:fzf-opts'     '--tiebreak=begin,length,index'
   'pnpm:search:actions' 'add rollback homepage deps info'
   'pnpm:search:cols'   'name'
 
@@ -84,15 +84,15 @@ _FC_REG+=(
 
   'pnpm:mutating'           'remove'
   'pnpm:outdated:mutating'  'update remove'
-  'pnpm:loop'           'homepage deps info'
+  'pnpm:stay'           'homepage deps info'
 
   'pnpm:rollback'       '_pnpmf_rollback'
   'pnpm:info'           '_pnpmf_info'
   'pnpm:deps'           '_pnpmf_deps'
   'pnpm:homepage'       '_pnpmf_homepage'
-  'pnpm:version-list'     '_pnpmf_version_list'
-  'pnpm:version-current'  '_pnpmf_version_current'
-  'pnpm:version-install'  '_pnpmf_version_install'
+  'pnpm:list-versions'     '_pnpmf_version_list'
+  'pnpm:current-version'  '_pnpmf_version_current'
+  'pnpm:install-version'  '_pnpmf_version_install'
 )
 
 pnpmf() {

@@ -66,17 +66,17 @@ _npmf_rollback() { _fc_rollback npm "$1" }
 _FC_REG+=(
   'npm:title'          'Npm'
   'npm:views'          'outdated search manage'
-  'npm:runner'         '_npmf_act'
+  'npm:fallback'         '_npmf_act'
 
   'npm:outdated'       '_npmf_list_outdated'
   'npm:outdated:title' 'Npm Outdated'
-  'npm:outdated:opt'   '--tiebreak=index'
+  'npm:outdated:fzf-opts'   '--tiebreak=index'
   'npm:outdated:actions' 'update uninstall rollback homepage deps info'
   'npm:outdated:cols'  'name have sep want'
 
   'npm:search'         '_npmf_list_available'
   'npm:search:title'   'Npm Search'
-  'npm:search:opt'     '--tiebreak=begin,length,index'
+  'npm:search:fzf-opts'     '--tiebreak=begin,length,index'
   'npm:search:actions' 'install rollback homepage deps info'
   'npm:search:cols'    'name'
 
@@ -87,15 +87,15 @@ _FC_REG+=(
 
   'npm:mutating'           'uninstall'
   'npm:outdated:mutating'  'update uninstall'
-  'npm:loop'           'homepage deps info'
+  'npm:stay'           'homepage deps info'
 
   'npm:rollback'       '_npmf_rollback'
   'npm:info'           '_npmf_info'
   'npm:deps'           '_npmf_deps'
   'npm:homepage'       '_npmf_homepage'
-  'npm:version-list'     '_npmf_version_list'
-  'npm:version-current'  '_npmf_version_current'
-  'npm:version-install'  '_npmf_version_install'
+  'npm:list-versions'     '_npmf_version_list'
+  'npm:current-version'  '_npmf_version_current'
+  'npm:install-version'  '_npmf_version_install'
 )
 
 npmf() {

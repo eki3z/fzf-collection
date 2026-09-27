@@ -36,7 +36,7 @@ _ghf_act() {
 _FC_REG+=(
   'gh:title'  'Gh'
   'gh:views'  'repos'
-  'gh:runner' '_ghf_act'
+  'gh:fallback' '_ghf_act'
 
   'gh:repos'         '_ghf_list_repos'
   'gh:repos:title'   'Gh Repos'
