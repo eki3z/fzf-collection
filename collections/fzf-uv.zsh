@@ -69,7 +69,8 @@ _uvf_list_outdated() {
 # search 列表。uv 没有搜索子命令，只能抓 simple index，与 _pipf_list_available
 # 同一套办法（各自一份，不共用：pipf 的那份还多一步 `pip config get`）。
 #
-# index 由 _UVF_INDEX 决定，默认 pypi.org。斜杠必须自己拼在 `}` 后面 ——
+# index 由 _UVF_INDEX 决定，默认为 _FC_PYPI_INDEX（pypi.org）。斜杠必须自己拼在
+# `}` 后面 ——
 # URL 不带斜杠时 index 会 301 到带斜杠的那份，而 curl 不带 -L 不跟随，
 # 于是拿到的是 169 字节的重定向页，一个包名都抠不出来。
 #
@@ -79,7 +80,7 @@ _uvf_list_outdated() {
 # 标记，两步加起来 1s 上下。而贪婪匹配的 sed 一行只能吐最后一个，所以必须靠
 # grep -o 先切开。
 _uvf_list_available() {
-  curl -s "${_UVF_INDEX:-https://pypi.org/simple}/" \
+  curl -s "${_UVF_INDEX:-$_FC_PYPI_INDEX}/" \
     | grep -o '>[^<]*</a>' \
     | sed -e 's/^>//' -e 's|</a>$||'
 }
@@ -90,12 +91,13 @@ _uvf_list_available() {
 
 # PyPI JSON API，供 list-versions / info / deps / homepage 用。
 #
-# 刻意**不**跟着 _UVF_INDEX 走：镜像的 JSON 快照可能很旧（实测 tuna 的
+# 刻意**不**跟着 _UVF_INDEX 走（理由写在 base.zsh 那两个常量并排处）：镜像的
+# JSON 快照可能很旧（实测 tuna 的
 # /pypi/ruff/json 还停在 0.5.7，PyPI 已经是 0.16.9），而这四处都要新鲜的
 # 元数据 —— 拿旧快照列版本，rollback 会给出一堆装不上的选项。search 抓名字
 # 不在乎新旧（名字集合稳定），所以那处用镜像、这处用 pypi.org。
 _uvf_pypi() {         # $1=pkg $2=jq 过滤器
-  curl -fsS "${_UVF_PYPI_JSON:-https://pypi.org/pypi}/$1/json" 2>/dev/null | jq -r "$2"
+  curl -fsS "${_UVF_PYPI_JSON:-$_FC_PYPI_JSON_BASE}/$1/json" 2>/dev/null | jq -r "$2"
 }
 
 # uv 没有 per-tool 的 show（`uv tool list` 只能整表列），所以从整表里按名字

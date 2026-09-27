@@ -1360,8 +1360,16 @@ t_case_readme() {
 
   t_sep "可配置项：代码里每个可覆盖的变量都必须在 README 里有，且名字一致"
   # 双向核对。以前只查 _ENVF_VALMAX 一个方向，_FC_COLUMN_GAP 就漏了。
+  #
+  # 必须先剔掉整行注释。这道门原来直接扫全文，于是注释里写一个
+  # ${_ENV_VAR:-$_FC_...} 当示例，就凭空多出一个「可覆盖项」，然后要求
+  # README 里有它的文档 —— 变量是假的，门却是真的。依赖那道门一直有
+  # `grep -hvE '^\s*#'`，这道没有。只剔整行注释、不动行尾注释：剔行尾会把
+  # `"... # ..."` 这种字符串里的 # 当注释，砍掉后面可能存在的真实可覆盖项，
+  # 而漏报比误报更难发现。
   local -a tunable
-  tunable=(${(u)${(s: :)$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*:-' "$root"/base.zsh "$root"/collections/*.zsh \
+  tunable=(${(u)${(s: :)$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh \
+          | grep -hoE '\$\{[A-Z_][A-Z0-9_]*:-' \
           | sed 's/\${//;s/:-//')}})
   # PAGER 是通用环境变量，不算插件自己的可配置项
   tunable=(${tunable:#PAGER})
@@ -1374,6 +1382,21 @@ t_case_readme() {
     fi
   done
   print -r -- "  代码里可覆盖的插件变量共 ${#tunable[@]} 个：${(j: :)tunable}"
+
+  t_sep "默认值集中在 base.zsh：README 必须写常量名，不能抄一份字面量"
+  # 上面那道门只保证「环境变量名在 README 里出现过」。它不管 README 说的默认值
+  # 是不是真的 —— 有人改了 _FC_ENVF_WIDTH，README 里的 80 会一直躺在那里。
+  # 所以每个可覆盖项都要在 README 里指出它落到哪个常量。
+  local -a dflt
+  dflt=(_FC_ENVF_WIDTH _FC_PYPI_INDEX _FC_PYPI_JSON_BASE)
+  local dname
+  for dname in "${dflt[@]}"; do
+    if grep -qF "$dname" "$R"; then
+      print -r -- "  OK   $dname 有文档"
+    else
+      print -r -- "  *** 错误：代码把默认值放在 $dname，README 没提它 ***"
+    fi
+  done
 
   t_sep "clone 地址必须指向本仓库，不能是上游"
   # 之前一直写的是上游 liuyinz 的地址，照抄会克隆错仓库。

@@ -204,7 +204,7 @@ envf() {
   # 循环体内的标量 local 会污染 stdout（zsh 5.9）。
   local _FC_HEADER rec line key val
   # local 一次性声明完，别在后面重复 local（zsh 5.9 会往 stdout 打 NAME=值）。
-  local valmax=${_ENVF_VALMAX:-80}
+  local valmax=${_ENVF_VALMAX:-$_FC_ENVF_WIDTH}
   _FC_HEADER="Env"
 
   # 用 NUL 分隔读，值里含换行时才不会被拆成两条记录。

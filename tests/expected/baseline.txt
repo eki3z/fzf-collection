@@ -406,6 +406,11 @@ watchdog->6.0.0]
   OK   _UVF_PYPI_JSON 有文档
   代码里可覆盖的插件变量共 4 个：_FC_COLUMN_GAP _ENVF_VALMAX _UVF_INDEX _UVF_PYPI_JSON
 
+===== 默认值集中在 base.zsh：README 必须写常量名，不能抄一份字面量 =====
+  OK   _FC_ENVF_WIDTH 有文档
+  OK   _FC_PYPI_INDEX 有文档
+  OK   _FC_PYPI_JSON_BASE 有文档
+
 ===== clone 地址必须指向本仓库，不能是上游 =====
   origin = github.com/eki3z/fzf-collection
   OK   README 的 clone 地址与 origin 一致

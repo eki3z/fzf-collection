@@ -253,7 +253,9 @@ Setting `FZF_COLLECTION_OPTS` to customize fzf options.
 ### _ENVF_VALMAX
 
 `envf` only. Number of characters of an environment variable's value shown
-in the list. Defaults to `80`. Lower it if you use a narrow terminal.
+in the list. Defaults to `_FC_ENVF_WIDTH` in `base.zsh`, currently `80`.
+Lower it if you use a narrow terminal, raise it if yours is wide — `PATH`
+alone runs to a couple of thousand characters.
 
 ```sh
 export _ENVF_VALMAX=60
@@ -270,8 +272,9 @@ export _FC_COLUMN_GAP=3
 ### _UVF_INDEX
 
 `uvf` `search` only. The simple index page it scrapes package names from.
-Defaults to `https://pypi.org/simple`, and the trailing `/` is added for
-you — the page answers 301 without it.
+Defaults to `_FC_PYPI_INDEX` in `base.zsh`, currently
+`https://pypi.org/simple`, and the trailing `/` is added for you — the page
+answers 301 without it.
 
 It is **not** read from `uv.toml` or `UV_DEFAULT_INDEX`: `uv` has no
 subcommand that prints the index it resolved, so nothing here would stay
@@ -285,7 +288,8 @@ export _UVF_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 ### _UVF_PYPI_JSON
 
 `uvf` `rollback` / `info` / `deps` / `homepage` only. Base URL of the
-PyPI JSON API. Defaults to `https://pypi.org/pypi`.
+PyPI JSON API. Defaults to `_FC_PYPI_JSON_BASE` in `base.zsh`, currently
+`https://pypi.org/pypi`.
 
 Deliberately independent of [_UVF_INDEX](#_uvf_index): a mirror's JSON
 snapshot can be far behind (Tuna still reported ruff 0.5.7 while PyPI was

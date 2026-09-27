@@ -70,6 +70,37 @@ _fc_homepage() {
 }
 
 # =============================================================================
+# 可覆盖项的默认值
+#
+# 这三个是**有文档的环境变量的默认值**，不是它们本身。调用点一律写成
+#     ${_ENV_VAR:-$_FC_...}
+# 也就是「值在代码里，改代码就改默认；要临时换就设环境变量」。
+#
+# 为什么不干脆在调用点写字面量（${_UVF_INDEX:-https://pypi.org/simple} 那种）：
+# 三个调用点分散在两个 collection 文件里，README 还要各抄一份那个数字或 URL。
+# 收在这里之后「默认是什么」只有一个答案，而且 t_case_readme 会检查 README 写的是
+# 这三个名字，而不是一份会漂的字面量。
+#
+# 为什么不干脆删掉环境变量、只留常量 —— 每一个都对应一个默认值覆盖不了的情况，
+# 删掉是砍功能，不是清理：
+#   _FC_ENVF_WIDTH      envf 的值显示多宽。80 是给窄终端的默认；宽终端的用户要
+#                       调大，而 PATH / FPATH / LS_COLORS 动辄上千字符。
+#   _FC_PYPI_INDEX      uvf search 抓名字的 index 页。走镜像的用户必须换，否则
+#                       抓不到东西。它也不能自动取：uv 没有子命令能打印它解析到
+#                       的 index（--show-settings 给的是一棵 Debug 树）。
+#   _FC_PYPI_JSON_BASE  PyPI JSON API 的根，给 list-versions / info / deps /
+#                       homepage 用。**刻意不跟 _FC_PYPI_INDEX 走**：镜像的 JSON
+#                       快照可能很旧（实测 tuna 的 ruff 还停在 0.5.7，PyPI 已经
+#                       0.16.9），而这四处要新鲜元数据 —— 拿旧快照列版本，rollback
+#                       会给出一堆装不上的选项。search 抓名字不在乎新旧，所以那边
+#                       用镜像、这边用 pypi.org。理由写在两个常量并排的地方，
+#                       否则下一个人会顺手把它们绑成一个。
+# =============================================================================
+typeset -g _FC_ENVF_WIDTH=80
+typeset -g _FC_PYPI_INDEX='https://pypi.org/simple'
+typeset -g _FC_PYPI_JSON_BASE='https://pypi.org/pypi'
+
+# =============================================================================
 # 配色与 SGR
 #
 # CSI 序列只在这一段里出现。着色一律走 _fc_sgr_prefix，剥色走 _fc_sgr_strip ——
