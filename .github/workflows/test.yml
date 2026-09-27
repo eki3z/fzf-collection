@@ -1,0 +1,60 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / zsh ${{ matrix.zsh }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two zsh versions: 5.8 is what Ubuntu 22.04 ships, 5.9 is what 24.04
+        # and Homebrew ship. Both have to pass -- the traps this plugin walks
+        # into (a flag argument is a literal, a `local` in a loop body writes to
+        # stdout) do not behave identically across zsh versions.
+        include:
+          - os: ubuntu-latest
+            zsh: '5.9'
+          - os: ubuntu-latest
+            zsh: '5.8'
+          - os: macos-latest
+            zsh: 'system'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install fzf
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            brew install fzf
+          else
+            sudo apt-get update
+            # fzf's own apt source is behind; take the static binary instead
+            mkdir -p "$HOME/.local/bin"
+            curl -fsSL \
+              "https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz" \
+              | tar -xz --strip-components=1 -C "$HOME/.local/bin" fzf
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Install jq and zsh
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            brew install jq zsh
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          else
+            sudo apt-get install -y jq zsh
+          fi
+
+      - name: Show versions
+        run: |
+          zsh --version
+          fzf --version
+          jq --version
+
+      # --record is deliberately not run here: the baseline is recorded by zsh,
+      # and letting every run record its own means there is no baseline at all.
+      - name: Run the test suite
+        run: ./tests/run.sh
