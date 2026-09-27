@@ -31,36 +31,19 @@ t_case_rule() {
   done
 }
 
-# 2. _fzf_format：五种取值下的输出
-#    已知：manage 与 pinned 共用同一分支，输出完全相同
-#    已知：bogus 走 *) 分支，打印错误后 return 0
-# 2. _fzf_format：只剩 general
-#    原来有 manage / pinned / outdated / general 四个分支，每个一条 perl printf
-#    规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走 _fc_render，
-#    format 只有 general 还被 pathf / envf 使用，另外三个分支无法到达，已删除，
-#    所以这里改为断言「不支持的 format 报错」而不是那三种渲染结果。
+# 2. _other_format：把 name<TAB>rest 渲染成对齐且着色的行
+#    原来这个函数叫 _fzf_format、住在 base.zsh、带一个 $format 参数，参数只
+#    允许 general 一个值，另外三个分支（manage / pinned / outdated）早在迁移
+#    到注册表驱动时就无法到达了。于是「format=manage 会报错」成了一条常设用例，
+#    测的是一个已经不存在的机制。现在没有参数、没有分支、没有那条用例。
 t_case_format() {
-  local fmt
-  local format
-  for fmt in manage pinned outdated; do
-    t_sep "format=$fmt（已删除的分支，应报错）"
-    format=$fmt
-    printf 'lodash\t4.17.21\tsome description here\nreact\t18.2.0\tdesc\n' \
-      | _fzf_format
-  done
-  t_sep "format=general"
-  format=general
+  t_sep "基本：首字段对齐，其余合并成一段并染蓝"
   printf 'lodash\t4.17.21\tsome description here\nreact\t18.2.0\tdesc\n' \
-    | _fzf_format
-  t_sep "format=bogus"
-  format=bogus
-  printf 'lodash\t4.17.21\tsome description here\n' | _fzf_format
-  t_sep "general：制表符与连续空格都要压成单空格（对齐 perl join 的行为）"
-  format=general
-  printf 'a\tb  c\ndd\tee\tff\n' | _fzf_format
-  t_sep "general：空输入无输出"
-  format=general
-  printf '' | _fzf_format
+    | _other_format
+  t_sep "制表符与连续空格都要压成单空格（对齐 perl join 的行为）"
+  printf 'a\tb  c\ndd\tee\tff\n' | _other_format
+  t_sep "空输入无输出"
+  printf '' | _other_format
   print -r -- "  (以上应为空)"
 }
 

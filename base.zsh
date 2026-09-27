@@ -51,55 +51,6 @@ _fc_homepage() {
   fi
 }
 
-# 首字段原样，其余字段合并后染蓝，再按首字段宽度对齐。
-#
-# 原来这里有 manage / pinned / outdated / general 四个分支，每个分支一条 perl
-# printf 规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走
-# _fc_render，format 只剩 general 还被 pathf / envf 使用，另外三个分支无法到达，
-# 所以删掉了。现在没有任何 perl 也没有 column。
-#
-# general 的语义（对照过 column -t 的输出）：
-#   - 按空白切，首字段之外的整段（含中间的空格）合并成一个字段
-#   - 首字段补齐到本批最大宽度，间隔 2 个空格
-_fzf_format() {          # $format 由调用方设为 general
-  local line first rest
-  local pre post
-  local -a lines out
-  if [[ $format != general ]]; then
-    print -r -- "Error: No such format: $format"
-    return 0
-  fi
-  # 着色在循环外解析一次：色码每行都一样，而逐行 _fc_sgr_paint 是每行一次命令替换。
-  # 两个变量而不是一个，正是为了「不上色时后缀也是空」——否则会留下裸的
-  # \e[0m，而 _fc_sgr_strip 之外的消费者未必认得它。
-  _fc_sgr_prefix have
-  pre=$_FC_SGR_PREFIX
-  if [[ -n $pre ]]; then post=$_FC_SGR_RESET; else post=''; fi
-  # 末行没有换行时 read 返回非零但仍填了变量，所以要补一次判断
-  while IFS= read -r line || [[ -n $line ]]; do lines+=("$line"); done
-  # 输入里只有空行时什么都不输出。旧实现是 `input="$(cat)"` 再 `[ -n "$input" ]`，
-  # 命令替换会剥掉尾部换行，所以纯空行输入的 input 是空串。
-  local any=0
-  for line in "${lines[@]}"; do
-    [[ -n ${line//[[:space:]]/} ]] && { any=1; break; }
-  done
-  (( any )) || return 0
-  for line in "${lines[@]}"; do
-    while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
-    first=${line%%[[:space:]]*}
-    rest=${line#"$first"}
-    # 首字段之外的部分要按空白重新拼接：旧规则是 perl 的 join(" ", @F[1 .. $#F])，
-    # 它把字段间的制表符、连续空格一律压成单个空格。直接取原 remainder 会把
-    # 制表符原样带进显示里。
-    rest=${rest//[[:space:]]/ }
-    while [[ $rest == *"  "* ]]; do rest=${rest//  / }; done
-    while [[ $rest == ' '* ]]; do rest=${rest# }; done
-    while [[ $rest == *' ' ]]; do rest=${rest% }; done
-    out+=("$first$_FC_SEP$pre$rest$post")
-  done
-  print -rl -- "${out[@]}" | _fzf_align "$_FC_SEP"
-}
-
 # =============================================================================
 # 配色与 SGR
 #
@@ -119,9 +70,10 @@ _fzf_format() {          # $format 由调用方设为 general
 # 而读者永远不会同时打开四个文件。现在 collection 里一个全局都不剩。
 typeset -g _FC_TAB=$'\t'
 typeset -g _FC_NL=$'\n'
-# _fzf_format 的字段分隔符。与空白区分开才能传给 _fzf_align ——
-# 空白模式下它是「按空白切、剥前导空白」，指定分隔符时不是。
-typeset -g _FC_SEP='^^'
+# 这里原来还有 _FC_SEP，是 _fzf_format 与 _fzf_align 之间的通道：格式层用
+# 它把「首字段」和「合并后的其余字段」隔开，再交给对齐层按它切列。现在这两个
+# 函数都搬进了 collections/fzf-other.zsh，通道变成同文件内的一次函数调用，
+# 于是分隔符退回成 _other_format 的 local，全局少一个。
 
 # 调色板：角色名 -> SGR 前缀。
 #
@@ -196,7 +148,7 @@ _fc_sgr_prefix() {            # $1=spec
 #
 # 只在入口层用（_fc_msg 这类一整个命令调一次的地方）。**不要**拿它逐格调用：
 # 命令替换每格一次 fork，2 万行 × 4 列实测 51s，而直接拼接是 0.3s。
-# 逐行或逐列的场景用「循环外解析一次前缀，循环内纯拼接」，见 _fzf_format
+# 逐行或逐列的场景用「循环外解析一次前缀，循环内纯拼接」，见 _other_format
 # 与 _fc_render。
 _fc_sgr_paint() {             # $1=spec $2=text
   local p
@@ -215,80 +167,6 @@ _fc_sgr_paint() {             # $1=spec $2=text
 _fc_sgr_strip() {           # $1=行
   setopt localoptions extendedglob
   print -r -- "${1//$'\e'\[[0-9;]#m/}"
-}
-
-# 按分隔符对齐成表格，逐字节复刻 `column -t`：
-#   丢掉空行 -> 切列 -> 每列补齐到本列最大宽度 -> 列间 2 个空格 -> 末列不补
-#
-# $1 可选分隔符。给了就按它切（复刻 `column -s X -t`），没给就按空白切
-# （复刻 `column -s ' ' -t`）。两种模式的差别都在下面的切分处：给了分隔符时
-# 空行保留且不剥前导空白，没给时反过来。
-#
-# 四个容易漏掉的细节：
-#   - column 把连续分隔符当一个，且**空字段整个丢掉**（不占宽度也不占间隔），
-#     所以列号是按「剩下的字段」数的
-#   - 空白模式下 column 会剥每行前导空白、折叠连续空格；指定分隔符时不会
-#   - 制表符在空白模式下**不算**分隔符（因为 -s ' ' 只认字面空格）
-#   - 行尾空白会被去掉，所以「a 」输出成「a」
-#
-# 已知限制：column 按显示宽度算，zsh 的 ${#} 按字符数，含宽字符时对齐会偏。
-# 目前的调用方是 crates.io 依赖表与 pathf / envf 的列表，字段都是 ASCII。
-_fzf_align() {          # $1=可选分隔符
-  local delim=$1 line cell
-  local -a rows cells keep widths
-  local i
-
-  while IFS= read -r line; do
-    if [[ -n $delim ]]; then
-      [[ -n $line ]] || continue
-    else
-      while [[ $line == ' '* ]]; do line=${line# }; done
-      while [[ $line == *' ' ]]; do line=${line% }; done
-      [[ -n $line ]] || continue
-      while [[ $line == *"  "* ]]; do line=${line//  / }; done
-    fi
-    rows+=("$line")
-  done
-
-  widths=()
-  for line in "${rows[@]}"; do
-    cells=()
-    if [[ -n $delim ]]; then
-      # 分隔符是变量时 ${(s:$delim)var} 不展开（flag 参数是字面量），
-      # 所以先替换成换行再按行切。给 $delim 加引号是为了不让它当 glob。
-      keep=("${(@f)${line//"$delim"/$_FC_NL}}")
-    else
-      keep=("${(@s: :)line}")
-    fi
-    # column 把空字段整个丢掉：不占宽度也不占间隔，列号按剩下的字段数
-    for cell in "${keep[@]}"; do
-      [[ -n $cell ]] && cells+=("$cell")
-    done
-    for (( i = 1; i <= ${#cells}; i++ )); do
-      (( ${#cells[i]} > ${widths[i]:-0} )) && widths[i]=${#cells[i]}
-    done
-  done
-
-  for line in "${rows[@]}"; do
-    cells=()
-    if [[ -n $delim ]]; then
-      keep=("${(@f)${line//"$delim"/$_FC_NL}}")
-    else
-      keep=("${(@s: :)line}")
-    fi
-    for cell in "${keep[@]}"; do
-      [[ -n $cell ]] && cells+=("$cell")
-    done
-    line=''
-    for (( i = 1; i <= ${#cells}; i++ )); do
-      if (( i < ${#cells} )); then
-        line+="${(r:${widths[i]}:: :)${cells[i]}}  "
-      else
-        line+="${cells[i]}"
-      fi
-    done
-    print -r -- "$line"
-  done
 }
 
 # =============================================================================

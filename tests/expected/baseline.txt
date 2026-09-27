@@ -14,27 +14,15 @@ Env
 Npm Outdated
 ▔▔▔▔▔▔▔▔▔▔▔▔
 
-===== format=manage（已删除的分支，应报错） =====
-Error: No such format: manage
-
-===== format=pinned（已删除的分支，应报错） =====
-Error: No such format: pinned
-
-===== format=outdated（已删除的分支，应报错） =====
-Error: No such format: outdated
-
-===== format=general =====
+===== 基本：首字段对齐，其余合并成一段并染蓝 =====
 lodash  [34m4.17.21 some description here[0m
 react   [34m18.2.0 desc[0m
 
-===== format=bogus =====
-Error: No such format: bogus
-
-===== general：制表符与连续空格都要压成单空格（对齐 perl join 的行为） =====
+===== 制表符与连续空格都要压成单空格（对齐 perl join 的行为） =====
 a   [34mb c[0m
 dd  [34mee ff[0m
 
-===== general：空输入无输出 =====
+===== 空输入无输出 =====
   (以上应为空)
 
 ===== 退出码：匹配时 =====
