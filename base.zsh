@@ -20,7 +20,7 @@ _fzf_exist() {
 # 旧驱动删掉之后没有任何地方再给它赋值，于是单参调用会打出一个空标签
 # （"Rollback cancel.: "）。
 _fzf_msg() {
-  printf "\n\x1b[34m%s\x1b[0m: %s\n" "${2:-fzf-collection}" "$1"
+  printf "\n%s: %s\n" "$(_fzf_paint msg "${2:-fzf-collection}")" "$1"
 }
 
 _fzf_pager() {
@@ -62,11 +62,18 @@ _fzf_homepage() {
 #   - 首字段补齐到本批最大宽度，间隔 2 个空格
 _fzf_format() {          # $format 由调用方设为 general
   local line first rest
+  local pre post
   local -a lines out
   if [[ $format != general ]]; then
     print -r -- "Error: No such format: $format"
     return 0
   fi
+  # 着色在循环外解析一次：色码每行都一样，而逐行 _fzf_paint 是每行一次命令替换。
+  # 两个变量而不是一个，正是为了「不上色时后缀也是空」——否则会留下裸的
+  # \e[0m，而 _fzf_unpaint 之外的消费者未必认得它。
+  _fzf_prefix have
+  pre=$_FZF_PRE
+  if [[ -n $pre ]]; then post=$_FZF_RESET; else post=''; fi
   # 末行没有换行时 read 返回非零但仍填了变量，所以要补一次判断
   while IFS= read -r line || [[ -n $line ]]; do lines+=("$line"); done
   # 输入里只有空行时什么都不输出。旧实现是 `input="$(cat)"` 再 `[ -n "$input" ]`，
@@ -87,10 +94,17 @@ _fzf_format() {          # $format 由调用方设为 general
     while [[ $rest == *"  "* ]]; do rest=${rest//  / }; done
     while [[ $rest == ' '* ]]; do rest=${rest# }; done
     while [[ $rest == *' ' ]]; do rest=${rest% }; done
-    out+=("$first$_FZF_SEP$_FZF_BLUE$rest$_FZF_RESET")
+    out+=("$first$_FZF_SEP$pre$rest$post")
   done
   print -rl -- "${out[@]}" | _fzf_align "$_FZF_SEP"
 }
+
+# =============================================================================
+# 配色与 SGR
+#
+# CSI 序列只在这一段里出现。着色一律走 _fzf_prefix，剥色走 _fzf_unpaint ——
+# 换配色时只改 _FZF_SGR 一处。
+# =============================================================================
 
 # ${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
 # 会原样输出这四个字符，所以换行只能走变量。必须在文件顶层声明 ——
@@ -99,10 +113,100 @@ typeset -g _FZF_NL=$'\n'
 # _fzf_format 的字段分隔符。与空白区分开才能传给 _fzf_align ——
 # 空白模式下它是「按空白切、剥前导空白」，指定分隔符时不是。
 typeset -g _FZF_SEP='^^'
+
+# 调色板：角色名 -> SGR 前缀。
+#
+# 用角色名而不是颜色名，是为了让注册表里的 cols 自解释：'name have sep want'
+# 一眼看出四列各是什么，而 '0,34,0,33' 只能靠 base.zsh 里的注释解释。
+# 反过来，换主题只改这张表，14 处 cols 声明一个字都不用动。
+#
+# 值为空串 = **明确不着色**，不是「没配」。所以解析器必须用 [[ -v ]] 查表，
+# 靠取值判空的话，拼错的名字会和 name 一样静默降级 —— 查表是唯一的分界。
+typeset -gA _FZF_SGR=(
+  name ''          # 包名 / 首字段
+  have $'\e[34m'   # 已装版本、说明文字
+  sep  ''          # '=>' 之类的连接符
+  want $'\e[33m'   # 目标版本
+  msg  $'\e[34m'   # _fzf_msg 的标签
+)
+# 角色名写错只告警一次，且告警排在颜色开关之前 —— 配置错了即便当前不上色
+# 也该说出来。告警去重靠这个标志**在当前 shell 里被赋值**，所以下面的
+# _fzf_prefix 必须走输出变量而不是命令替换：命令替换跑在子 shell 里，
+# 赋的值出不来，于是每次渲染都会重吵一遍。
+typeset -gi _FZF_ROLE_WARNED=0
+# _fzf_prefix 的输出。同 _pkg_split_tabs -> _PKG_FIELDS、_pkg_view_mutating ->
+# _PKG_MUTATING 的约定：结果落在全局变量里，函数不 print，也不 fork。
+typeset -g _FZF_PRE=''
+
 # 颜色转义序列。$'\e[34m' 写在双引号里不会被求值（和 $'\n' 同一个陷阱），
 # 只会得到字面的 `$'\e[34m'` 七个字符，所以必须先落到变量里。
-typeset -g _FZF_BLUE=$'\e[34m'
+# 这里只有 RESET：原先还有个 _FZF_BLUE，着色改走调色板后它已无人引用，
+# 留着还会在换色后变成一个撒谎的名字（角色 have 改成青色，它就跟着变青）。
 typeset -g _FZF_RESET=$'\e[0m'
+
+# 解析一个配色 spec，结果写进 _FZF_PRE（空串 = 不着色）。
+#
+# 用输出变量而不是 print + $(...)：命令替换在子 shell 里跑，_FZF_ROLE_WARNED
+# 的赋值出不来，去重就失效了；而这里每个 view 每次渲染都要问一次颜色，
+# 走命令替换还白白 fork 一次。约定与 _PKG_FIELDS / _PKG_MUTATING 一致。
+#
+# spec 有三种写法：
+#   空 / 0 / -            不着色
+#   数字与分号（34、1;32）  原样当 SGR 参数
+#   其余                  查 _FZF_SGR 的角色名
+#
+# 数字那条是为兼容旧的 cols 声明（'0,34,0,33'）留的，两种写法都认。
+_fzf_prefix() {            # $1=spec
+  local s=$1
+  _FZF_PRE=''
+  if [[ -z $s || $s == 0 || $s == - ]]; then
+    return 0
+  elif [[ $s == *[!0-9\;]* ]]; then
+    # 查表前先挡掉含 ']' 的输入：[[ -v _FZF_SGR[$s] ]] 里 zsh 会把括号里的内容
+    # 当下标表达式求值，而 spec 是注册表字符串里的数据，不能假定它老实。
+    if [[ $s == *[^a-z0-9_-]* ]] || [[ ! -v _FZF_SGR[$s] ]]; then
+      if (( ! _FZF_ROLE_WARNED )); then
+        _FZF_ROLE_WARNED=1
+        print -ru2 -- "fzf-collection: 未知配色角色 '${s}'，按不上色处理"
+      fi
+      return 0
+    fi
+    s=${_FZF_SGR[$s]}
+    [[ -n $s ]] || return 0
+  else
+    # $'\e[' 与参数之间不能加引号以外的任何东西，也不能写成 "$'\e['" ——
+    # 和上面同一个陷阱：双引号里 $'…' 不求值。
+    s=$'\e['${s}'m'
+  fi
+  # 角色合法性先判、开关后判：配置写错时即便颜色关着也要报。
+  (( _FZF_COLOR )) || return 0
+  _FZF_PRE=$s
+}
+
+# 上色后原样输出文本。
+#
+# 只在入口层用（_fzf_msg 这类一整个命令调一次的地方）。**不要**拿它逐格调用：
+# 命令替换每格一次 fork，2 万行 × 4 列实测 51s，而直接拼接是 0.3s。
+# 逐行或逐列的场景用「循环外解析一次前缀，循环内纯拼接」，见 _fzf_format
+# 与 _pkg_display。
+_fzf_paint() {             # $1=spec $2=text
+  local p
+  _fzf_prefix "$1"
+  p=$_FZF_PRE
+  [[ -n $p ]] || { print -r -- "$2"; return 0 }
+  print -r -- "$p$2$_FZF_RESET"
+}
+
+# 剥掉一行里全部的 SGR 序列。
+#
+# 必须开 extendedglob。${1//$'\e'\[[0-9;]#m/} 在 zsh 5.9 下**不匹配** ——
+# flag 位置上的 [ 被当成 bracket expression（fzf-other.zsh 的旧注释记过这件事）。
+# 而 ${1//$'\e'\[[0-9;]*m/} 过度匹配：* 贪婪，会把整行吃到最后一个 m。
+# 两种都实测过，别改回去。
+_fzf_unpaint() {           # $1=行
+  setopt localoptions extendedglob
+  print -r -- "${1//$'\e'\[[0-9;]#m/}"
+}
 
 # 按分隔符对齐成表格，逐字节复刻 `column -t`：
 #   丢掉空行 -> 切列 -> 每列补齐到本列最大宽度 -> 列间 2 个空格 -> 末列不补
@@ -259,11 +363,13 @@ _pkg_split_tabs() {        # $1=line -> _PKG_FIELDS
 
 # 展示层：把 _PKG_ROWS（干净的 name<TAB>f2<TAB>... ）渲染成对齐且逐列着色的 fzf 行。
 #
-# 列数与配色由注册表 <eco>:<view>:cols 给出，每列一个 ANSI 颜色码，0 = 不着色：
-#   '0,34,0,33'   ->  name | 蓝 | 无 | 黄      即 outdated 的四列双色
-#   '0,34'        ->  name | 蓝                即 manage 的两列
-#   '0'           ->  单列                     即 search
+# 列数与配色由注册表 <eco>:<view>:cols 给出，**空格分隔**，每列一个 spec。
+# spec 是调色板里的角色名（见 _FZF_SGR），值写错了由 _fzf_prefix 降级并告警：
+#   'name have sep want'  name | 蓝 | 无 | 黄   即 outdated 的四列双色
+#   'name have'           name | 蓝             即 manage 的两列
+#   'name'                单列                   即 search
 # 未声明 cols 时按单列处理。
+# 数字写法（'0,34,0,33'）仍然认，那是旧声明的兼容路径，见 _fzf_prefix。
 #
 # 每列各自补齐到本列最大宽度，末列不补（避免尾随空白）。
 # 输出的行结构是  name<TAB><补齐><TAB>f2<TAB>f3...
@@ -273,6 +379,7 @@ _pkg_display() {           # $1=eco $2=view
   local eco=$1 view=$2
   local line cell seg out k first
   local -a cols widths flds segs
+  local -a pre post
   local i nf n
   # 所有 local 都必须写在函数开头，绝不能写进循环体。
   # 回归点：zsh 5.9 在循环体内执行标量 local 时，会往 stdout 打一行
@@ -284,9 +391,23 @@ _pkg_display() {           # $1=eco $2=view
   n=${#_PKG_ROWS}
   (( n )) || return 0
 
-  cols=(${(s:,:)$(_pkg_view_get "$eco" "$view" cols)})
+  cols=(${(s: :)$(_pkg_view_get "$eco" "$view" cols)})
   nf=$#cols
   (( nf )) || { cols=(0); nf=1 }
+
+  # 逐列的着色前后缀在这里一次解析好，循环内只做字符串拼接。
+  #
+  # 不能在循环里调 _fzf_paint：命令替换每格一次 fork，2 万行 × 4 列实测 51s，
+  # 而直接拼 $'\e['… 是 0.33s，预解析是 0.28s。这也是 _fzf_paint 只许在入口层
+  # 用的原因。
+  #
+  # 宽度的预扫描仍然在补齐之后、着色之前 —— 色码不进 ${#cell}，
+  # 所以对齐与配色互不干扰。
+  for (( i = 1; i <= nf; i++ )); do
+    _fzf_prefix "${cols[i]}"
+    pre[i]=$_FZF_PRE
+    if [[ -n ${pre[i]} ]]; then post[i]=$_FZF_RESET; else post[i]=''; fi
+  done
 
   widths=()
   for (( i = 1; i <= nf; i++ )); do widths[i]=0; done
@@ -317,11 +438,7 @@ _pkg_display() {           # $1=eco $2=view
         (( nf > 1 )) && segs+=("${(l:$(( widths[1] - ${#cell} )):: :)}")
       else
         (( i < nf )) && cell="${(r:$widths[i]:: :)cell}"
-        if [[ ${cols[i]} == 0 ]]; then
-          segs+=("$cell")
-        else
-          segs+=($'\e['"${cols[i]}m${cell}"$'\e[0m')
-        fi
+        segs+=("$pre[i]$cell$post[i]")
       fi
     done
     # 字段之间用 COLSEP 个 tab 分隔，配合 --tabstop=1 渲染成同样多个空格。
@@ -401,7 +518,7 @@ _pkg_streamable() {        # $1=eco $2=view -> 返回 0 表示可流式
     done
   done
   # cols 没声明时 _pkg_display 按单列处理，这里必须同样按单列算
-  cols=(${(s:,:)$(_pkg_view_get "$eco" "$view" cols)})
+  cols=(${(s: :)$(_pkg_view_get "$eco" "$view" cols)})
   (( ${#cols} <= 1 )) || return 1
   return 0
 }

@@ -45,7 +45,7 @@ PKG+=(
   'gh:repos'         '_ghf_list_repos'
   'gh:repos:title'   'Gh Repos'
   'gh:repos:actions' 'delete-repo browse'
-  'gh:repos:cols'    '0'
+  'gh:repos:cols'    'name'
 
   # 旧 ghf 没有任何 `return 0` 分支，两个动作做完都回到列表，
   # 所以 loop 是空的：browse 不会把动作菜单留在原地。

@@ -188,7 +188,7 @@ PKG+=(
   'brew:outdated:title' 'Brew Outdated'
   'brew:outdated:opt'   '--tiebreak=index'
   'brew:outdated:actions' 'upgrade uninstall rollback options homepage info deps uses edit cat'
-  'brew:outdated:cols'  '0,34,0,33'
+  'brew:outdated:cols'  'name have sep want'
 
   'brew:search'         '_brewf_list_available'
   'brew:search:title'   'Brew Search'
@@ -198,22 +198,22 @@ PKG+=(
   # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable），
   # 列表不再进内存，每次回到列表重跑一次 brew formulae（约 0.1s）。
   'brew:search:actions' 'install rollback options homepage info deps uses edit cat link unlink pin'
-  'brew:search:cols'    '0'
+  'brew:search:cols'    'name'
 
   'brew:manage'         '_brewf_list_installed'
   'brew:manage:title'   'Brew Manage'
   'brew:manage:actions' 'uninstall rollback homepage link unlink pin unpin options info deps uses edit cat'
-  'brew:manage:cols'    '0,34'
+  'brew:manage:cols'    'name have'
 
   'brew:pinned'         '_brewf_list_pinned'
   'brew:pinned:title'   'Brew Pinned'
   'brew:pinned:actions' 'unpin rollback uninstall homepage link unlink options info deps uses edit cat'
-  'brew:pinned:cols'    '0,34'
+  'brew:pinned:cols'    'name have'
 
   'brew:tap'            '_brewf_list_tap'
   'brew:tap:title'      'Brew Tap'
   'brew:tap:actions'    'untap tap-info'
-  'brew:tap:cols'       '0'
+  'brew:tap:cols'       'name'
 
   # 移出列表的动作。旧 _brewf_switch 里调 _fzf_tmp_shift 的是
   # upgrade 和 uninstall|untap|unpin 四个。rollback 不删行但会回到列表，

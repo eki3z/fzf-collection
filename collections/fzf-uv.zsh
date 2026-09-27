@@ -212,7 +212,7 @@ PKG+=(
   'uv:outdated:title' 'Uv Tool Outdated'
   'uv:outdated:opt'   '--tiebreak=index'
   'uv:outdated:actions' 'upgrade uninstall rollback homepage deps info'
-  'uv:outdated:cols'  '0,34,0,33'
+  'uv:outdated:cols'  'name have sep want'
 
   'uv:search'         '_uvf_list_available'
   'uv:search:title'   'Uv Tool Search'
@@ -220,12 +220,12 @@ PKG+=(
   # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable）：
   # 87 万行不落进 zsh 内存，每次回到列表重抓一次（连抓带抠约 1s）。
   'uv:search:actions' 'install rollback homepage deps info'
-  'uv:search:cols'    '0'
+  'uv:search:cols'    'name'
 
   'uv:manage'         '_uvf_list_installed'
   'uv:manage:title'   'Uv Tool Manage'
   'uv:manage:actions' 'uninstall rollback homepage deps info'
-  'uv:manage:cols'    '0,34'
+  'uv:manage:cols'    'name have'
 
   # upgrade 只在 outdated 出现、uninstall 只在 manage 出现，两个视图互不覆盖，
   # 所以在 eco 级声明一次就够，不必像 pipf 那样再写 view 级覆盖。

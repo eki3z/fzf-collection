@@ -23,15 +23,15 @@
 # "/Applications/VMware Fusion.app/Contents/Public"，结果只剩 "Fusion.app/..."。
 # 这里改成「首个字段之后全都要」，把值完整带出来。
 #
-# 颜色码：fzf 带 --ansi 时输出已经剥掉了颜色，所以这两句只是兜底。
-# 模式写成 "$var"（带引号）才是字面量 —— \e[0m 里的 [ 不加引号会被当成
-# bracket expression。试过 ${var//$'\e'\[[0-9;]#m/} 那种「剥掉全部 CSI 序列」
-# 的写法，在 zsh 里匹配不上，所以只掐固定的首尾两段。
+# 颜色码：fzf 带 --ansi 时输出已经剥掉了颜色，所以这步只是兜底。
+# 原来这里是掐固定的首尾两段（'$_FZF_BLUE' 前缀、'$_FZF_RESET' 后缀），
+# 也就是把剥色和**当前配色**绑死了：换成别的颜色后它会静默失效，而且因为
+# 上面那条 --ansi 已经剥过一次，失效也不报错。现在统一走 _fzf_unpaint，
+# 认的是 SGR 序列本身，与用哪套配色无关。
 _fzf_tail() {             # $1=行
   local t=${1#"${1%%[[:space:]]*}"}
   while [[ $t == [[:space:]]* ]]; do t=${t#?}; done
-  [[ $t == "$_FZF_BLUE"* ]] && t=${t#"$_FZF_BLUE"}
-  [[ $t == *"$_FZF_RESET" ]] && t=${t%"$_FZF_RESET"}
+  t=$(_fzf_unpaint "$t")
   print -r -- "$t"
 }
 

@@ -24,12 +24,14 @@ A collection of commands to enhance commandline with [FZF](https://github.com/ju
     - [pathf](#pathf)
     - [envf](#envf)
   - [Environment](#environment)
+    - [FZF_COLLECTION_COLOR](#fzf_collection_color)
     - [FZF_COLLECTION_MODULES](#fzf_collection_modules)
     - [FZF_COLLECTION_OPTS](#fzf_collection_opts)
     - [_ENVF_VALMAX](#_envf_valmax)
     - [_PKG_COLSEP](#_pkg_colsep)
     - [_UVF_INDEX](#_uvf_index)
     - [_UVF_PYPI_JSON](#_uvf_pypi_json)
+  - [Colours](#colours)
   - [Development](#development)
   - [Todo](#todo)
 
@@ -191,6 +193,20 @@ misaligned. The value you get on stdout is always the complete one.
 
 ## Environment
 
+### FZF_COLLECTION_COLOR
+
+`0` or `1`. Whether the lists are coloured. On unless `NO_COLOR` is set,
+`TERM` is empty or `dumb`, or stdout is not a terminal — the rules
+[no-color.org](https://no-color.org) asks for. Set it to override them.
+
+With colour off, a row is byte-for-byte the coloured row minus the escape
+sequences. Alignment, padding and the value a command prints on stdout are
+unchanged.
+
+```sh
+export FZF_COLLECTION_COLOR=0
+```
+
 ### FZF_COLLECTION_MODULES
 
 Setting `FZF_COLLECTION_MODULES` to load modules. By default, all modules are loaded.
@@ -273,6 +289,31 @@ Deliberately independent of [_UVF_INDEX](#_uvf_index): a mirror's JSON
 snapshot can be far behind (Tuna still reported ruff 0.5.7 while PyPI was
 on 0.16.9), and these four need current metadata. A stale snapshot makes
 `rollback` offer versions that are not installable.
+
+## Colours
+
+The palette is one associative array, `_FZF_SGR` in `base.zsh`, keyed by the
+*role* a column plays rather than by its colour:
+
+| Role | Used for | Colour |
+| --- | --- | --- |
+| `name` | the package name, or the whole of a single-column view | none |
+| `have` | the installed version, or the description | blue |
+| `sep` | connectors such as `=>` | none |
+| `want` | the version a mutating action would install | yellow |
+| `msg` | the label a message is printed with | blue |
+
+A view declares its columns in the registry with `<eco>:<view>:cols`, space
+separated, one role per column: `outdated` is `name have sep want`, `manage`
+is `name have`, `search` is `name`. Re-theme every view at once by editing the
+palette. A role name that is not in the table is reported once on stderr and
+treated as no colour; a bare SGR parameter such as `34` is still accepted, so
+the older `0,34,0,33` form keeps working.
+
+Escape sequences appear in the data, so fzf has to be told about them — see
+[`FZF_COLLECTION_OPTS`](#fzf_collection_opts). Alignment is measured on the
+uncoloured text: each column is padded first and coloured afterwards, which is
+why the padding never has to account for the sequences.
 
 ## Development
 

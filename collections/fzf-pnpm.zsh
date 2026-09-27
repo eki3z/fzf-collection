@@ -73,18 +73,18 @@ PKG+=(
   'pnpm:outdated:title' 'Pnpm Outdated'
   'pnpm:outdated:opt'   '--tiebreak=index'
   'pnpm:outdated:actions' 'update remove rollback homepage deps info'
-  'pnpm:outdated:cols' '0,34,0,33'
+  'pnpm:outdated:cols' 'name have sep want'
 
   'pnpm:search'         '_pnpmf_list_available'
   'pnpm:search:title'   'Pnpm Search'
   'pnpm:search:opt'     '--tiebreak=begin,length,index'
   'pnpm:search:actions' 'add rollback homepage deps info'
-  'pnpm:search:cols'   '0'
+  'pnpm:search:cols'   'name'
 
   'pnpm:manage'         '_pnpmf_list_installed'
   'pnpm:manage:title'   'Pnpm Manage'
   'pnpm:manage:actions' 'remove rollback homepage deps info'
-  'pnpm:manage:cols'   '0,34'
+  'pnpm:manage:cols'   'name have'
 
   'pnpm:mutating'           'remove'
   'pnpm:outdated:mutating'  'update remove'

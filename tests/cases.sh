@@ -184,12 +184,12 @@ t_case_pkg_display() {
   # 而补齐段在最长的那行恰好为空 —— 那一行就少一个 tab、整行左移。
   # 列间的 tab 数（_PKG_COLSEP，默认 5）不固定，所以只比较数据列本身。
   t_sep "对齐断言：各数据列起始位置必须一致"
-  PKG+=('al:manage:cols' '0,34,0,33')
+  PKG+=('al:manage:cols' 'name have sep want')
   _PKG_ROWS=("a	1	=>	1"
              "much-longer-name	22	=>	22"
              "mid	333	=>	333")
   for row in "${(@f)$(_pkg_display al manage)}"; do
-    row=${row//$'\e['\[[0-9]m/}
+    row=$(_fzf_unpaint "$row")
     _pkg_split_tabs "$row"
     segs2=("${_PKG_FIELDS[@]}")
     c=0; start=()
@@ -218,7 +218,7 @@ t_case_pkg_display() {
   _PKG_ROWS=("a	1	=>	1"
              "much-longer-name	22	=>	22"
              "mid	333	=>	333")
-  PKG+=('al:manage:cols' '0,34,0,33')
+  PKG+=('al:manage:cols' 'name have sep want')
   local -a names
   names=()
   for row in "${(@f)$(_pkg_display al manage)}"; do
@@ -596,7 +596,7 @@ t_case_pkg_action_menu() {
     'probe2:manage'  '_pkg_probe_list'
     'probe2:manage:title'   'Probe2 Manage'
     'probe2:manage:actions' 'show hide'
-    'probe2:manage:cols'    '0,34,0,33'
+    'probe2:manage:cols'    'name have sep want'
     'probe2:mutating' 'hide'
     'probe2:loop'     'show'
     'probe2:runner'   '_pkg_probe_runner'
@@ -665,7 +665,7 @@ t_case_pkg_failure() {
     'p4:manage' '_pkg_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
-    'p4:manage:cols'    '0'
+    'p4:manage:cols'    'name'
     'p4:mutating' 'go'
     'p4:loop'     'peek'
     'p4:runner'   "$runner"
@@ -691,7 +691,7 @@ t_case_pkg_failure() {
     'p4:manage' '_pkg_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
-    'p4:manage:cols'    '0'
+    'p4:manage:cols'    'name'
     'p4:mutating' 'go'
     'p4:loop'     'peek'
     'p4:runner'   '_pkg_p4_always_ok'
@@ -714,7 +714,7 @@ t_case_pkg_failure() {
     'p4:manage' '_pkg_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
-    'p4:manage:cols'    '0'
+    'p4:manage:cols'    'name'
     'p4:mutating' 'go'
     'p4:loop'     'peek'
     'p4:runner'   '_pkg_p4_always_err'
@@ -739,7 +739,7 @@ t_case_pkg_failure() {
     'p4:manage' '_pkg_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
-    'p4:manage:cols'    '0'
+    'p4:manage:cols'    'name'
     'p4:mutating' 'go'
     'p4:loop'     'peek'
     'p4:runner'   '_pkg_p4_interrupt'
@@ -844,7 +844,7 @@ t_case_pkg_stream() {
     's1:search'       '_pkg_s_list'
     's1:search:title' 'S1 Search'
     's1:search:actions' 'install'
-    's1:search:cols'  '0'
+    's1:search:cols'  'name'
     # 唯一声明的 mutating 动作是 uninstall，而 search 的动作里没有它 ——
     # 交集为空正是可流式的判据
     's1:mutating'     'uninstall'
@@ -1114,6 +1114,111 @@ t_case_uvf_rows() {
   unset 'uv_orig'
 }
 
+# 21. 配色层：角色名解析、颜色开关、_fzf_unpaint
+#
+# 回归点 1：角色名写错必须**降级并告警**。查表不能靠判空 —— 'name' 在调色板里
+#   的值就是空串（明确不上色），和拼错的名字一样查不到值。所以 _fzf_prefix 用
+#   [[ -v _FZF_SGR[$s] ]] 查。这里断言拼错的名字仍会被发现，否则它会静默
+#   变成不上色，而配色错在哪个 view 上极难看出来。
+# 回归点 2：关色输出必须与「开色再剥色」逐字节相同。这条同时钉住了
+#   「色码不进对齐计算」—— _pkg_display 是先补齐后上色，任何一边动了
+#   都会在这里露出来（历史上那三行的起始列就因为剥色正则无效而整体偏 9）。
+# 回归点 3：_fzf_unpaint 认的是 SGR 本身，不是当前配色。fzf-other.zsh 的
+#   _fzf_tail 原来掐的是固定的首尾两段（绑定当时的配色），而 fzf --ansi
+#   已经先剥过一次，所以配色一换它就失效且不报错。断言里特意用调色板里
+#   没有的颜色（品红）做剥离 —— 用「当前用到的颜色」测是测不出来的。
+t_case_palette() {
+  local out p spec role i escf
+  local -a colored plain stripped
+
+  t_sep "角色名 -> SGR 前缀"
+  for spec in name have sep want msg 0 - ''; do
+    _fzf_prefix "$spec"
+    p=$_FZF_PRE
+    print -r -- "  ${(qq)spec} -> ${(qq)p}"
+  done
+
+  t_sep "数字 spec 仍认（旧的 cols 声明走这条兼容路）"
+  for spec in 34 33 1\;32; do
+    _fzf_prefix "$spec"
+    p=$_FZF_PRE
+    print -r -- "  ${(qq)spec} -> ${(qq)p}"
+  done
+
+  t_sep "未知角色名：降级为不上色 + 只告警一次"
+  escf=$(mktemp)
+  _FZF_ROLE_WARNED=0
+  _fzf_prefix nope 2>"$escf"
+  p=$_FZF_PRE
+  print -r -- "  前缀=[${(qq)p}]（应为空串，即不上色）"
+  print -r -- "  告警: $(<"$escf")"
+  # 第二次必须安静。_fzf_prefix 走输出变量而不是 print，正是为了这个标志
+  # 能在当前 shell 里存活 —— 走命令替换的话赋值落在子 shell，每次都重吵一遍。
+  _fzf_prefix alsowrong 2>"$escf"
+  p=$_FZF_PRE
+  print -r -- "  再错一次: [$(<"$escf")]（应为空，一次 session 只吵一次）"
+  rm -f "$escf"
+  _FZF_ROLE_WARNED=0
+
+  t_sep "颜色开关：关色时零转义，且与「开色再剥色」逐字节相同"
+  PKG+=('pal:manage:cols' 'name have sep want')
+  _PKG_ROWS=("alpha	1.0	=>	2.0"
+             "much-longer-name	22	=>	22")
+  colored=("${(@f)$(_pkg_display pal manage)}")
+  _FZF_COLOR=0
+  plain=("${(@f)$(_pkg_display pal manage)}")
+  _FZF_COLOR=1
+  print -r -- "  开色 ${#colored} 行 / 关色 ${#plain} 行"
+  if [[ ${(j: :)plain} == *$'\e'* ]]; then
+    print -r -- '  *** 错误：关色后仍有转义序列 ***'
+  else
+    print -r -- '  OK 关色输出不含 ESC'
+  fi
+  stripped=()
+  local same=1
+  for (( i = 1; i <= ${#colored}; i++ )); do
+    stripped[i]=$(_fzf_unpaint "$colored[i]")
+    # 逐行比而不是把数组 join 后一次比：join 的分隔符是 flag 的字面量参数，
+    # ${(j: :.)arr} 里的 $'\n' 不求值（和本项目里那一串 flag 陷阱同源），
+    # 而且逐行比还能指出是哪一行开始不一致。
+    if [[ ${stripped[i]} != ${plain[i]:-} ]]; then
+      same=0
+      print -r -- "  *** 第 $i 行不一致 ***"
+    fi
+  done
+  (( ${#colored} == ${#plain} )) || same=0
+  if (( same )); then
+    print -r -- '  OK 剥色后的开色输出 == 关色输出'
+  else
+    print -r -- '  *** 错误：颜色影响了行内容（多半是色码混进了对齐计算） ***'
+  fi
+  unset 'PKG[pal:manage:cols]'
+
+  t_sep "_fzf_unpaint：认 SGR 本身，与用哪套配色无关"
+  # ${(ok)_FZF_SGR}：o = 按键排序。不排的话关联数组的遍历顺序不保证，
+  # 基线就会随机漂 —— 这类不稳定输出绝不能进基线。
+  for role in ${(ok)_FZF_SGR}; do
+    p=$(_fzf_paint "$role" 'X')
+    out=$(_fzf_unpaint "$p")
+    if [[ $out == X ]]; then
+      print -r -- "  ${(qq)role} ${(qq)p}X -> OK"
+    else
+      print -r -- "  ${(qq)role} -> *** 错误：剥完还剩 [${(qq)out}] ***"
+    fi
+  done
+  # 调色板里没有的颜色、多参数 SGR、24 位真彩：都不该影响剥离。
+  for spec in $'\e[35m' $'\e[1;32m' $'\e[38;2;255;128;0m'; do
+    out=$(_fzf_unpaint "${spec}X${_FZF_RESET}")
+    if [[ $out == X ]]; then
+      print -r -- "  ${(qq)spec} -> OK"
+    else
+      print -r -- "  ${(qq)spec} -> *** 错误：剥完还剩 [${(qq)out}] ***"
+    fi
+  done
+  out=$(_fzf_unpaint $'a\tb\e[34mc\e[0md')
+  print -r -- "  混在中间: [${(qq)out}]（应为含一个真 tab）"
+}
+
 # 20. README 与代码一致
 #     README 曾经把不存在的 `uvf`、不存在的 `registry` view 写进去，
 #     漏掉 pinned / gemf / envf，依赖表也只提了 grep coreutils 和 gh jq。
@@ -1356,6 +1461,7 @@ t_run_all() {
   t_case_other_tail
   t_case_envf_width
   t_case_uvf_rows
+  t_case_palette
   t_case_readme
   printf '\n### END\n'
 }

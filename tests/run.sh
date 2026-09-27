@@ -170,6 +170,12 @@ run_cases() {
       # fzf --ansi 门都曾因此一直是空跑，基线里只留下一个「OK」。
       root=$PWD
       export root
+      # 颜色必须显式钉在开启。插件在加载时判 [[ -t 1 ]]，而这里是子 shell
+      # 的非交互 zsh，恒为 false —— 不钉住的话颜色全关，baseline 里那些
+      # 带 ESC 的行（_fzf_format 与 _fzf_msg 的输出）会整片掉转义。
+      # 关色那条路由 t_case_palette 自己单独测。
+      FZF_COLLECTION_COLOR=1
+      export FZF_COLLECTION_COLOR
       source ./fzf-collection.plugin.zsh || exit 1
       source ./tests/cases.sh || exit 1
       t_run_all

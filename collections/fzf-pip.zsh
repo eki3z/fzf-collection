@@ -124,7 +124,7 @@ PKG+=(
   'pip:outdated:title' 'Pip Outdated'
   'pip:outdated:opt'   '--tiebreak=index'
   'pip:outdated:actions' 'upgrade uninstall rollback deps use info'
-  'pip:outdated:cols'  '0,34,0,33'
+  'pip:outdated:cols'  'name have sep want'
 
   'pip:search'         '_pipf_list_available'
   'pip:search:title'   'Pip Search'
@@ -132,12 +132,12 @@ PKG+=(
   # 卸载没有意义，卸载入口只留在 manage。去掉它之后本视图也不再需要缓存列表，
   # 于是走流式路径（见 base.zsh 的 _pkg_streamable）。
   'pip:search:actions' 'install rollback'
-  'pip:search:cols'    '0'
+  'pip:search:cols'    'name'
 
   'pip:manage'         '_pipf_list_installed'
   'pip:manage:title'   'Pip Manage'
   'pip:manage:actions' 'uninstall rollback homepage deps use info'
-  'pip:manage:cols'    '0,34'
+  'pip:manage:cols'    'name have'
 
   'pip:mutating'           'uninstall'
   'pip:outdated:mutating'  'upgrade uninstall'

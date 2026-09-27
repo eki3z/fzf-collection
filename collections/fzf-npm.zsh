@@ -76,18 +76,18 @@ PKG+=(
   'npm:outdated:title' 'Npm Outdated'
   'npm:outdated:opt'   '--tiebreak=index'
   'npm:outdated:actions' 'update uninstall rollback homepage deps info'
-  'npm:outdated:cols'  '0,34,0,33'
+  'npm:outdated:cols'  'name have sep want'
 
   'npm:search'         '_npmf_list_available'
   'npm:search:title'   'Npm Search'
   'npm:search:opt'     '--tiebreak=begin,length,index'
   'npm:search:actions' 'install rollback homepage deps info'
-  'npm:search:cols'    '0'
+  'npm:search:cols'    'name'
 
   'npm:manage'         '_npmf_list_installed'
   'npm:manage:title'   'Npm Manage'
   'npm:manage:actions' 'uninstall rollback homepage deps info'
-  'npm:manage:cols'    '0,34'
+  'npm:manage:cols'    'name have'
 
   'npm:mutating'           'uninstall'
   'npm:outdated:mutating'  'update uninstall'

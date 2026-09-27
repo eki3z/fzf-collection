@@ -136,19 +136,19 @@ PKG+=(
   'gem:outdated:title' 'Gem Outdated'
   'gem:outdated:opt'   '--tiebreak=index'
   'gem:outdated:actions' 'upgrade uninstall rollback deps info'
-  'gem:outdated:cols'  '0,34,0,33'
+  'gem:outdated:cols'  'name have sep want'
 
   'gem:search'         '_gemf_list_available'
   'gem:search:title'   'Gem Search'
   # search 列的是**还没装**的 gem，uninstall 在这里没有意义，入口只留在 manage。
   # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable）。
   'gem:search:actions' 'install rollback'
-  'gem:search:cols'    '0'
+  'gem:search:cols'    'name'
 
   'gem:manage'         '_gemf_list_installed'
   'gem:manage:title'   'Gem Manage'
   'gem:manage:actions' 'uninstall rollback homepage deps info'
-  'gem:manage:cols'    '0,34'
+  'gem:manage:cols'    'name have'
 
   # 移出列表的动作。旧 _gemf_switch 里只有 upgrade / uninstall 调了
   # _fzf_tmp_shift，rollback 不删行但会回到列表，所以它不在这里。
