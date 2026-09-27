@@ -5,22 +5,28 @@
 # body 尚未满足「纯 bash 语法、实际由 zsh 解析」这个约束。
 #
 # 用例只覆盖确定性、无副作用的纯函数。
-# 不覆盖：_fzf_pager(起 less)、_fzf_homepage(开浏览器)、
-#        _fzf_version_check(有 sleep)、_fzf_tmp_*(P2 将删除)
+# 不覆盖：_fc_pager(起 less)、_fc_homepage(开浏览器)、
+#        _fc_cmd(要真 fzf 与真包管理器)
+#
+# 已删除的用例：t_case_header。它调用 _fzf_header —— 一个在 P1 换注册表驱动时
+# 就删掉的函数。于是它每次打印 "command not found: _fzf_header"，而基线把那
+# 两行录成了预期输出。三个门都曾这样"稳定地错"：_fzf_opts 被前一个用例清空、
+# $root 没导出、以及这一条调用一个不存在的函数。基线只记录文本，分不出
+# 「正确」与「每次都一样地错」。
 
 # 用例之间的分隔标记，便于 diff 定位
 t_sep() {
   printf '\n===== %s =====\n' "$1"
 }
 
-# 1. _fzf_underline：header 下划线，长度应等于字符串长度
+# 1. _fc_rule：header 下划线，长度应等于字符串长度
 #    已知问题：base.sh:43 的 {1..$#1} 在 bash 下只输出 1 个字符
 #    （bash 的 brace expansion 先于参数展开，{1..$#1} 被当作字面量）
-t_case_underline() {
+t_case_rule() {
   local s
   for s in "Header Text" "abc" "Find Path" "Env" "Npm Outdated"; do
     printf -- '--- [%s] (len=%s) ---\n' "$s" "${#s}"
-    _fzf_underline "$s"
+    _fc_rule "$s"
     printf '\n'
   done
 }
@@ -30,7 +36,7 @@ t_case_underline() {
 #    已知：bogus 走 *) 分支，打印错误后 return 0
 # 2. _fzf_format：只剩 general
 #    原来有 manage / pinned / outdated / general 四个分支，每个一条 perl printf
-#    规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走 _pkg_display，
+#    规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走 _fc_render，
 #    format 只有 general 还被 pathf / envf 使用，另外三个分支无法到达，已删除，
 #    所以这里改为断言「不支持的 format 报错」而不是那三种渲染结果。
 t_case_format() {
@@ -58,60 +64,45 @@ t_case_format() {
   print -r -- "  (以上应为空)"
 }
 
-# 3. _pkg_read：fzf 非交互模式（--filter）与退出码透传
+# 3. _fc_fzf_read：fzf 非交互模式（--filter）与退出码透传
 #    这一条原本测的是 _fzf_read（缺陷 B1 / B11）。ffp 移除后 _fzf_read
 #    零调用者，已随之删除，但它承载的 B11 知识不能丢：
 #      旧 _fzf_read 结尾是 `fzf | perl`，perl 恒返回 0，于是它永远返回 0，
 #      调用方无法区分「用户选中」与「用户取消」。
-#    _pkg_read 不管道任何东西，直接透传 $?，所以 B11 在这里已修。
+#    _fc_fzf_read 不管道任何东西，直接透传 $?，所以 B11 在这里已修。
 #    保留这个用例是为了让「退出码必须透传」不再退化 —— 调用方靠它 break 循环。
 t_case_read() {
   _FC_OPTS=()
   header="Test"
 
   t_sep "退出码：匹配时"
-  printf 'alpha\nbeta\n' | _pkg_read --filter=alp >/dev/null
-  print -r -- "  _pkg_read 退出码=$?"
+  printf 'alpha\nbeta\n' | _fc_fzf_read --filter=alp >/dev/null
+  print -r -- "  _fc_fzf_read 退出码=$?"
   printf 'alpha\nbeta\n' | fzf --filter=alp >/dev/null
   print -r -- "  fzf 裸调用  退出码=$?   ← 两者必须一致"
 
   t_sep "退出码：无匹配时必须透传 fzf 的 1（缺陷 B11 的回归点）"
-  printf 'alpha\nbeta\n' | _pkg_read --filter=zzzz >/dev/null
-  print -r -- "  _pkg_read 退出码=$?   ← 必须是 1，不能恒为 0"
+  printf 'alpha\nbeta\n' | _fc_fzf_read --filter=zzzz >/dev/null
+  print -r -- "  _fc_fzf_read 退出码=$?   ← 必须是 1，不能恒为 0"
   printf 'alpha\nbeta\n' | fzf --filter=zzzz >/dev/null
   print -r -- "  fzf 裸调用  退出码=$?"
 }
 
-# 4. _fzf_msg：消息输出格式
+# 4. _fc_msg：消息输出格式
 #    标签必须显式传。原来回退到 $caller —— 那是旧驱动的自由变量，
 #    旧驱动删掉后无人赋值，单参调用会打出一个空标签。
 t_case_msg() {
   t_sep "有 pkg"
-  _fzf_msg "some message" "mypkg"
+  _fc_msg "some message" "mypkg"
   t_sep "无 pkg：回退到固定标签，不再依赖 \$caller"
   caller="MYFUNC"
-  _fzf_msg "another message"
+  _fc_msg "another message"
 }
 
-# 5. _fzf_header：依赖 funcstack（base.sh:32），bash 下为空数组
-#    这是「约束 3 未达成」的直接证据，P1 将删除该机制
-t_case_header() {
-  t_sep "在 zpf_manage 上下文中"
-  zpf_manage() {
-    printf '  [%s]\n' "$(_fzf_header)"
-  }
-  zpf_manage
-  t_sep "在 zpf_outdated 上下文中"
-  zpf_outdated() {
-    printf '  [%s]\n' "$(_fzf_header)"
-  }
-  zpf_outdated
-}
-
-# 6. 字段拆分：body 需要把「name<TAB>version...」拆开
+# 5. 字段拆分：body 需要把「name<TAB>version...」拆开
 #    注意：IFS=$'\t' read -r -a arr 是 bash-only（zsh: bad option: -a），
 #    不可用于 body。下面两种形式在 bash 3.2 / bash 5 / zsh 下均可用。
-t_case_split() {
+t_case_split_row() {
   local row x y z
   row="lodash	4.17.21	1.2M"
   t_sep "取首字段（参数展开，可移植）"
@@ -143,27 +134,27 @@ gamma"
   done
 }
 
-# 8. _pkg_display：结构化行 -> 对齐且上色的 fzf 显示行
+# 8. _fc_render：结构化行 -> 对齐且上色的 fzf 显示行
 #    行结构：name<TAB><补齐><TAB>rest。补齐在第一个 tab 之后，
 #    所以取 name 无需剥空格。对齐只发生在这一层，_FC_ROWS 里是干净数据。
-t_case_pkg_display() {
+t_case_render() {
   local line out row segs2 c i
   local -a start ref
   # start/segs2 也用于下面的对齐断言
   t_sep "有 display：每列各自对齐，列间是真 tab"
   _FC_ROWS=("lodash	4.17.21" "my package	1.0.0 some desc")
-  _pkg_display | cat -v
+  _fc_render | cat -v
   t_sep "无 display（search view）：原样输出，不补齐"
   _FC_ROWS=("all-the-package-names" "left-pad")
-  _pkg_display | cat -v
+  _fc_render | cat -v
   t_sep "回读 name：多词包名完整，且天然没有尾随空格"
   _FC_ROWS=("my package	1.0.0")
-  line=$(_pkg_display)
+  line=$(_fc_render)
   printf '  显示行=[%s]\n' "$line"
   printf '  name=[%s]\n' "${line%%	*}"
   t_sep "_FC_ROWS 保持干净（未被显示层污染）"
   _FC_ROWS=("alpha	1" "beta	2" "a-very-long-name	3")
-  _pkg_display >/dev/null
+  _fc_render >/dev/null
   printf '  [%s]\n' "${(j:,:)${_FC_ROWS}}"
 
   # 字符级断言：显示行里绝不能出现字面的反斜杠。
@@ -171,7 +162,7 @@ t_case_pkg_display() {
   # 于是输出全是字面 \t。基线只「记录现状」，抓不到这类 bug，必须显式断言。
   t_sep "字符级断言：不得出现字面反斜杠"
   _FC_ROWS=("a	1" "bb	2")
-  out=$(_pkg_display)
+  out=$(_fc_render)
   if [[ $out == *'\'* ]]; then
     print -r -- '  *** 错误：显示行里出现字面反斜杠，tab 拼接写错了 ***'
   else
@@ -188,9 +179,9 @@ t_case_pkg_display() {
   _FC_ROWS=("a	1	=>	1"
              "much-longer-name	22	=>	22"
              "mid	333	=>	333")
-  for row in "${(@f)$(_pkg_display al manage)}"; do
-    row=$(_fzf_unpaint "$row")
-    _pkg_split_tabs "$row"
+  for row in "${(@f)$(_fc_render al manage)}"; do
+    row=$(_fc_sgr_strip "$row")
+    _fc_split_row "$row"
     segs2=("${_FC_FIELDS[@]}")
     c=0; start=()
     for (( i = 2; i <= ${#segs2}; i++ )); do
@@ -221,7 +212,7 @@ t_case_pkg_display() {
   _FC_REG+=('al:manage:cols' 'name have sep want')
   local -a names
   names=()
-  for row in "${(@f)$(_pkg_display al manage)}"; do
+  for row in "${(@f)$(_fc_render al manage)}"; do
     names+=("${row%%	*}")
   done
   print -r -- "  各行首段: ${(j: | :)names}"
@@ -234,20 +225,20 @@ t_case_pkg_display() {
   unset '_FC_REG[al:manage:cols]'
 }
 
-# 9. _pkg_drop：从 _FC_ROWS 精确删除匹配的行
+# 9. _fc_drop_row：从 _FC_ROWS 精确删除匹配的行
 #    对照 ${(@)rows:#pat} 的 glob 误伤 —— 这是必须用 while + [[ == ]] 的原因
-t_case_pkg_drop() {
+t_case_drop_row() {
   t_sep "删除存在的行"
   _FC_ROWS=("alpha	1" "beta	2" "gamma	3")
-  _pkg_drop "beta"
+  _fc_drop_row "beta"
   printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
   t_sep "删除多词包名（精确匹配，不能误伤其它行）"
   _FC_ROWS=("my package	1" "other-pkg	2" "my package extra	3")
-  _pkg_drop "my package"
+  _fc_drop_row "my package"
   printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
   t_sep "删除不存在的行（不应误删）"
   _FC_ROWS=("a*x	1" "ab	2" "axb	3")
-  _pkg_drop "a*x"
+  _fc_drop_row "a*x"
   printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
   t_sep "对照：glob 写法会误伤（这就是不用它的原因）"
   _FC_ROWS=("a*x	1" "ab	2" "axb	3")
@@ -256,7 +247,7 @@ t_case_pkg_drop() {
 
 # 10. 动作成员判定：${arr[(Ie)act]} 是驱动判断「删行回列表」还是
 #     「留在动作菜单」的唯一依据
-t_case_pkg_membership() {
+t_case_membership() {
   local -a mutating loop
   local act m l
   mutating=(uninstall)
@@ -269,26 +260,26 @@ t_case_pkg_membership() {
   done
 }
 
-# 11. _pkg_get：注册表读取
+# 11. _fc_reg_get：注册表读取
 #     关键回归点 —— 绝不能写 ${_FC_REG[$var:field]}，zsh 会把 ':' 后的首字母
 #     当成参数修饰符（:t tail / :h head / :r root / :e ext / :s suffix
 #     / :l lower / :u upper），于是静默返回空。下面的字段名全部踩过这个坑。
-t_case_pkg_get() {
+t_case_reg_get() {
   t_sep "首字母撞上修饰符的字段（这些曾全部静默返回空）"
   local f v
   for f in title loop runner homepage rollback search; do
-    v=$(_pkg_get npm "$f")
+    v=$(_fc_reg_get npm "$f")
     printf '  %-10s -> [%s]\n' "$f" "$v"
   done
   t_sep "未定义的字段应为空"
   for f in tap head root ext suffix lower upper; do
-    v=$(_pkg_get npm "$f")
+    v=$(_fc_reg_get npm "$f")
     printf '  %-10s -> [%s]\n' "$f" "$v"
   done
   t_sep "view 专属字段"
-  printf '  manage:title        -> [%s]\n' "$(_pkg_get npm manage title)"
-  printf '  search:opt          -> [%s]\n' "$(_pkg_get npm search opt)"
-  printf '  mutating:outdated   -> [%s]\n' "$(_pkg_get npm mutating outdated)"
+  printf '  manage:title        -> [%s]\n' "$(_fc_reg_get npm manage title)"
+  printf '  search:opt          -> [%s]\n' "$(_fc_reg_get npm search opt)"
+  printf '  mutating:outdated   -> [%s]\n' "$(_fc_reg_get npm mutating outdated)"
   t_sep "对照：直接写变量下标会静默失败"
   local -A T
   T=( [npm:title]=Npm [npm:views]="a b" )
@@ -303,12 +294,12 @@ t_case_pkg_get() {
 #     回归点：zsh 关联数组的 _FC_REG=(...) 是【整体替换】而非合并，
 #     后 source 的 collection 会把先前的条目全部擦掉。
 #     必须写 _FC_REG+=(...)。此用例随每个 collection 迁移而增长。
-t_case_pkg_coexist() {
+t_case_coexist() {
   local eco
   t_sep "已迁移的 ecosystem 都应留在注册表里"
   for eco in npm pnpm pip; do
     printf '  %-6s title=[%s] views=[%s]\n' \
-      "$eco" "$(_pkg_get "$eco" title)" "$(_pkg_get "$eco" views)"
+      "$eco" "$(_fc_reg_get "$eco" title)" "$(_fc_reg_get "$eco" views)"
   done
   t_sep "对照组：_FC_REG=(...) 替换，_FC_REG+=(...) 才合并"
   local -A T
@@ -320,19 +311,19 @@ t_case_pkg_coexist() {
   printf '  改用 T+=([y:1])               -> 条目数=%s  （3 = 正确合并）\n' "${#T}"
 }
 
-# 13. _pkg_session 必须把列表管道给 fzf
+# 13. _fc_session 必须把列表管道给 fzf
 #     回归点：曾漏掉 `print -l -- "${_FC_ROWS[@]}" |`，于是 fzf 自己去读终端，
-#     把用户输入当成候选列表。这里用桩替换 _pkg_read，捕获它从 stdin 读到的内容。
-t_case_pkg_session_stdin() {
+#     把用户输入当成候选列表。这里用桩替换 _fc_fzf_read，捕获它从 stdin 读到的内容。
+t_case_session_stdin() {
   local line
   t_sep "fzf 从 stdin 读到的候选列表"
-  functions[_pkg_read_orig]=$functions[_pkg_read]
+  functions[_t_read_orig]=$functions[_fc_fzf_read]
 
   # 桩：原样打印从 stdin 读到的内容，然后模拟「用户取消」。
-  # 必须写 stderr —— _pkg_read 是在 $(...) 的子 shell 里被调用的，
+  # 必须写 stderr —— _fc_fzf_read 是在 $(...) 的子 shell 里被调用的，
   # 写 stdout 会被命令替换吞掉，两种情况的输出就完全一样，测不出差别。
   # 收不到任何行时显式报错，这样「漏掉管道」才能被基线比对抓到。
-  _pkg_read() {
+  _fc_fzf_read() {
     local line
     local n=0
     while IFS= read -r line; do print -r -- "  fzf<- [$line]" >&2; (( n++ )); done
@@ -343,24 +334,24 @@ t_case_pkg_session_stdin() {
     fi
     return 130
   }
-  _pkg_list_stub() { printf 'alpha\t1.0\nmy package\t2.0\n' }
-  _pkg_act_stub() { : }
+  _t_list_stub() { printf 'alpha\t1.0\nmy package\t2.0\n' }
+  _t_act_stub() { : }
   _FC_REG+=(
     'probe:title'         'Probe'
     'probe:views'         'manage'
-    'probe:manage'        '_pkg_list_stub'
+    'probe:manage'        '_t_list_stub'
     'probe:manage:title'  'Probe Manage'
     'probe:manage:actions' 'uninstall'
     'probe:mutating'      'uninstall'
-    'probe:runner'        '_pkg_act_stub'
+    'probe:runner'        '_t_act_stub'
   )
 
-  _pkg_session probe manage
+  _fc_session probe manage
   print "  取消后剩余行数=${#_FC_ROWS}  （2 = 未误删）"
 
-  unfunction _pkg_read _pkg_list_stub _pkg_act_stub
-  eval "_pkg_read() { $functions[_pkg_read_orig] }"
-  unfunction _pkg_read_orig
+  unfunction _fc_fzf_read _t_list_stub _t_act_stub
+  eval "_fc_fzf_read() { $functions[_t_read_orig] }"
+  unfunction _t_read_orig
   for k in title views manage manage:title manage:actions mutating runner; do
     unset "_FC_REG[probe:$k]"
   done
@@ -370,7 +361,7 @@ t_case_pkg_session_stdin() {
 #     回归点：曾写成 picked=(${(f)"$sel"})，那是非法语法 ——
 #     zsh -n 查不出来，只有真正选中之后才在运行时抛 bad substitution。
 #     正确写法是 "${(@f)sel}"（flag 不能与带引号的展开组合）。
-t_case_pkg_pick_split() {
+t_case_pick_split() {
   local sel p
   local -a picked
   t_sep "多选：每行取首字段，多词包名要完整"
@@ -391,19 +382,19 @@ gamma	3.0"
 # 15. 注册表自洽：动作名不得与内部数据键相撞，派发结果必须存在
 #
 # 回归点：回滚用的安装器曾登记为 _FC_REG[<eco>:install]，而 install 正是
-# search 视图的合法动作名。_pkg_act 用 _FC_REG[<eco>:<动作名>] 查专用处理
+# search 视图的合法动作名。_fc_act 用 _FC_REG[<eco>:<动作名>] 查专用处理
 # 函数，于是选「install」会命中回滚安装器，而且只收到包名一个参数 ——
 # npm / pip / gem 三个 search 视图全中，pnpm 用 add 才躲过去。
 # 症状要等真的去装一个包才暴露，所以这里静态拦住。
-t_case_pkg_registry() {
+t_case_registry() {
   local key eco view act fn
   local -a ecos parts views acts k2 reserved providers
   local missing=0
 
-  # 数据键必须从 base.zsh 的 _pkg_rollback 里推导，不能在这里抄一份。
+  # 数据键必须从 base.zsh 的 _fc_rollback 里推导，不能在这里抄一份。
   # 抄一份的话把键名改回去，本用例就跟着变，永远「一致」。
-  reserved=(${(f)"$(sed -n '/^_pkg_rollback()/,/^}/p' base.zsh \
-    | grep -o '_pkg_get "\$eco" [a-z][a-z-]*' | awk '{print $NF}')"})
+  reserved=(${(f)"$(sed -n '/^_fc_rollback()/,/^}/p' base.zsh \
+    | grep -o '_fc_reg_get "\$eco" [a-z][a-z-]*' | awk '{print $NF}')"})
   reserved=(${(u)reserved})
 
   ecos=()
@@ -416,23 +407,23 @@ t_case_pkg_registry() {
   ecos=(${(u)ecos})
 
   t_sep "注册表自洽性（${#ecos} 个 ecosystem）"
-  printf '  _pkg_rollback 读的数据键：%s\n' "${(j: :)reserved}"
+  printf '  _fc_rollback 读的数据键：%s\n' "${(j: :)reserved}"
 
   for eco in $ecos; do
     # 这几个键指向的函数就是「数据提供函数」。动作一旦解析到其中之一，
-    # 说明 _pkg_act 把数据提供器当成了动作处理函数 —— 无论那个键叫什么，
+    # 说明 _fc_act 把数据提供器当成了动作处理函数 —— 无论那个键叫什么，
     # 所以这里比的是函数身份，不是键名。
     providers=()
     for key in $reserved; do
-      fn=$(_pkg_get $eco $key)
+      fn=$(_fc_reg_get $eco $key)
       [[ -n $fn ]] && providers+=($fn)
     done
 
-    views=(${(s: :)$(_pkg_get $eco views)})
+    views=(${(s: :)$(_fc_reg_get $eco views)})
     for view in $views; do
-      acts=(${(s: :)$(_pkg_get $eco $view actions)})
+      acts=(${(s: :)$(_fc_reg_get $eco $view actions)})
       for act in $acts; do
-        fn=$(_pkg_get $eco $act)
+        fn=$(_fc_reg_get $eco $act)
         [[ -n $fn ]] || continue                  # 走 runner，不构成冲突
         if (( ${providers[(Ie)$fn]} )); then
           missing=1
@@ -448,10 +439,10 @@ t_case_pkg_registry() {
   (( missing )) || printf '  OK 无碰撞，派发目标全部存在\n'
   printf '  每个 view 都声明了 title/actions/cols 的：'
   for eco in $ecos; do
-    for view in ${(s: :)$(_pkg_get $eco views)}; do
+    for view in ${(s: :)$(_fc_reg_get $eco views)}; do
       k2=()
       for key in $view "${view}:title" "${view}:actions" "${view}:cols"; do
-        [[ -n $(_pkg_get $eco $key) ]] || { missing=1; printf '\n    缺 %s/%s 的 %s' $eco $view $key }
+        [[ -n $(_fc_reg_get $eco $key) ]] || { missing=1; printf '\n    缺 %s/%s 的 %s' $eco $view $key }
       done
     done
   done
@@ -463,14 +454,14 @@ t_case_pkg_registry() {
 # 16. 键的形状：_FC_REG[<eco>:<view>:<field>]，且驱动真的解析得到
 #
 # 回归点（用户实测报出）：brewf outdated 选中后回车没有子菜单。
-# 原因是 _pkg_actions 把参数拼成了 _FC_REG[<eco>:actions:<view>]，
+# 原因是 _fc_actions 把参数拼成了 _FC_REG[<eco>:actions:<view>]，
 # 而注册表登记的是 _FC_REG[<eco>:<view>:actions] —— 读不到任何值且**不报错**，
 # 只是静默返回空，于是动作清单为空，回车无事可做。
 # 同一次迁移里 mutating 用的是另一种顺序，两种顺序并存才让这种错有可能发生。
 #
 # 这里既查形状（第二段必须是合法 view 名），也走驱动的真实解析路径查非空，
 # 两者都必要：形状对但调用点顺序错，只有后者能抓到。
-t_case_pkg_keyshape() {
+t_case_keyshape() {
   local key eco view
   local -a ecos parts
   local bad=0
@@ -494,7 +485,7 @@ t_case_pkg_keyshape() {
       # 判据必须是「这个 X 有没有自己的 title」，不能从现有键里反推 X 集合 ——
       # 那样写等于把顺序写反的键也算进合法 view 名，永远通过。
       # cargo:search 是个有 title 但不在 views 里的 view，本检查照样认可。
-      if [[ -z $(_pkg_view_get $eco $view title) ]]; then
+      if [[ -z $(_fc_reg_view_get $eco $view title) ]]; then
         bad=1
         printf '  *** 错误：%s 无 title，不是合法 view（键 %s 的分段顺序反了）***\n' $view $key
       fi
@@ -505,8 +496,8 @@ t_case_pkg_keyshape() {
   t_sep "驱动解析：每个 view 的动作清单都非空（回车必须有子菜单）"
   bad=0
   for eco in $ecos; do
-    for view in ${(s: :)$(_pkg_get $eco views)}; do
-      if _pkg_view_actions $eco $view 2>/dev/null; then
+    for view in ${(s: :)$(_fc_reg_get $eco views)}; do
+      if _fc_reg_view_actions $eco $view 2>/dev/null; then
         printf '  OK   %-15s %2d 个动作\n' "$eco/$view" ${#_FC_ACTIONS}
       else
         bad=1
@@ -519,10 +510,10 @@ t_case_pkg_keyshape() {
   t_sep "驱动解析：view 级 mutating 覆盖必须真的被取到"
   bad=0
   for eco in $ecos; do
-    for view in ${(s: :)$(_pkg_get $eco views)}; do
-      key=$(_pkg_view_get $eco $view mutating)
+    for view in ${(s: :)$(_fc_reg_get $eco views)}; do
+      key=$(_fc_reg_view_get $eco $view mutating)
       [[ -n $key ]] || continue
-      _pkg_view_mutating $eco $view
+      _fc_reg_view_mutating $eco $view
       if [[ ${(j: :)${_FC_MUTATING}} == ${(j: :)${(s: :)key}} ]]; then
         printf '  OK   %-15s 覆盖 [%s]\n' "$eco/$view" "$key"
       else
@@ -542,24 +533,24 @@ t_case_pkg_keyshape() {
 # _FC_REG[<eco>:<view>:actions] —— 读不到值且不报错，于是清单为空，
 # fzf 第二次被调用时收到 0 个候选，什么都不弹。
 #
-# 计数器必须落文件。_pkg_read 是在 $(...) 的子 shell 里被调用的，
+# 计数器必须落文件。_fc_fzf_read 是在 $(...) 的子 shell 里被调用的，
 # 变量改动出不了子 shell —— 之前用变量计数时每次都以为是第一次调用，
 # 结果永远返回列表行，session 空转到超时。这个坑项目里已记过档。
-t_case_pkg_action_menu() {
+t_case_action_menu() {
   local cnt logf line n
   local k
   cnt=$(mktemp)
   logf=$(mktemp)
   print -r -- 0 >"$cnt"
 
-  functions[_pkg_read_orig]=$functions[_pkg_read]
-  _pkg_read() {
+  functions[_t_read_orig]=$functions[_fc_fzf_read]
+  _fc_fzf_read() {
     local n
     n=$(<"$cnt")
     n=$(( n + 1 ))
     print -r -- "$n" >"$cnt"
     # 候选数与内容写 stderr：stdout 会被命令替换吞掉。
-    # 裸调用 _pkg_session（不接管道），否则它跑在子 shell 里，
+    # 裸调用 _fc_session（不接管道），否则它跑在子 shell 里，
     # 改到的 _FC_ROWS 出不来，末尾就永远报 0 行。
     local -a cand
     local c
@@ -588,27 +579,27 @@ t_case_pkg_action_menu() {
       *) return 130 ;;
     esac
   }
-  _pkg_probe_list() { printf 'alpha\t1.0\t=>\t2.0\nbeta\t3.0\t=>\t4.0\n' }
-  _pkg_probe_runner() { print -r -- "  ACTION act=$1 pkg=[$2]" >&2; return 0 }
+  _t_probe_list() { printf 'alpha\t1.0\t=>\t2.0\nbeta\t3.0\t=>\t4.0\n' }
+  _t_probe_runner() { print -r -- "  ACTION act=$1 pkg=[$2]" >&2; return 0 }
   _FC_REG+=(
     'probe2:title'   'Probe2'
     'probe2:views'   'manage'
-    'probe2:manage'  '_pkg_probe_list'
+    'probe2:manage'  '_t_probe_list'
     'probe2:manage:title'   'Probe2 Manage'
     'probe2:manage:actions' 'show hide'
     'probe2:manage:cols'    'name have sep want'
     'probe2:mutating' 'hide'
     'probe2:loop'     'show'
-    'probe2:runner'   '_pkg_probe_runner'
+    'probe2:runner'   '_t_probe_runner'
   )
 
-  _pkg_session probe2 manage
+  _fc_session probe2 manage
   print -r -- "  fzf 共被调用 $(<"$cnt") 次（4 = 列表 + 子菜单 + 回子菜单 + 取消）"
   print -r -- "  剩余行数 ${#_FC_ROWS}（show 在 loop 里不该删行，应为 2）"
 
-  unfunction _pkg_read _pkg_probe_list _pkg_probe_runner
-  eval "_pkg_read() { $functions[_pkg_read_orig] }"
-  unfunction _pkg_read_orig
+  unfunction _fc_fzf_read _t_probe_list _t_probe_runner
+  eval "_fc_fzf_read() { $functions[_t_read_orig] }"
+  unfunction _t_read_orig
   for k in title views manage manage:title manage:actions manage:cols mutating loop runner; do
     unset "_FC_REG[probe2:$k]"
   done
@@ -621,32 +612,32 @@ t_case_pkg_action_menu() {
 # 而且失败的那个照样被移出列表，于是它从屏幕上消失了但系统里还在。
 # 现在 mutating 动作遇到失败立刻停止，只把成功的移出列表，并打印汇总；
 # 只读动作不中止，因为它没有改变任何状态，「失败」往往只是「没有结果」。
-t_case_pkg_failure() {
+t_case_failure() {
   local cnt logf line n log
   local k runner
   local -a rows
-  # local 而不是 typeset -g：stub _pkg_read 是在 $(...) 子 shell 里被调的，
+  # local 而不是 typeset -g：stub _fc_fzf_read 是在 $(...) 子 shell 里被调的，
   # zsh 动态作用域照样看得到调用者的 local，但它不该以全局的形式活过本用例。
-  # （插件自己也依赖同一个性质，见 base.zsh 的 _pkg_read 读 header。）
+  # （插件自己也依赖同一个性质，见 base.zsh 的 _fc_fzf_read 读 header。）
   local SEL_ACT
   cnt=$(mktemp)
   logf=$(mktemp)
 
-  _pkg_p4_list() { printf 'a\t1\nb\t2\nc\t3\nd\t4\n' }
+  _t_p4_list() { printf 'a\t1\nb\t2\nc\t3\nd\t4\n' }
   # 第 2 个包失败，其余成功
-  _pkg_p4_fail_second() {
+  _t_p4_fail_second() {
     print -r -- "$*" >>"$logf"
     [[ $2 == b ]] && return 1
     return 0
   }
-  _pkg_p4_always_ok()  { print -r -- "$*" >>"$logf"; return 0 }
-  _pkg_p4_always_err() { print -r -- "$*" >>"$logf"; return 1 }
+  _t_p4_always_ok()  { print -r -- "$*" >>"$logf"; return 0 }
+  _t_p4_always_err() { print -r -- "$*" >>"$logf"; return 1 }
   # 128 + SIGINT：brew 下载 formulae 时被 Ctrl-C 掉就是这个退出码
-  _pkg_p4_interrupt()  { print -r -- "$*" >>"$logf"; return 130 }
+  _t_p4_interrupt()  { print -r -- "$*" >>"$logf"; return 130 }
 
-  functions[_pkg_read_orig]=$functions[_pkg_read]
-  # 计数器落文件：_pkg_read 在 $(...) 子 shell 里被调用，变量出不去
-  _pkg_read() {
+  functions[_t_read_orig]=$functions[_fc_fzf_read]
+  # 计数器落文件：_fc_fzf_read 在 $(...) 子 shell 里被调用，变量出不去
+  _fc_fzf_read() {
     local n
     n=$(<"$cnt")
     n=$(( n + 1 ))
@@ -660,12 +651,12 @@ t_case_pkg_failure() {
   }
 
   t_sep "mutating 中途失败：立刻停止、只删成功项、失败项可重试"
-  runner=_pkg_p4_fail_second
+  runner=_t_p4_fail_second
   SEL_ACT=go
   _FC_REG+=(
     'p4:title'  'P4'
     'p4:views'  'manage'
-    'p4:manage' '_pkg_p4_list'
+    'p4:manage' '_t_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
@@ -675,7 +666,7 @@ t_case_pkg_failure() {
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
-  _pkg_session p4 manage
+  _fc_session p4 manage
   log=$(<"$logf")
   print -r -- "  runner 收到 ${#${(f)log}} 次调用: ${(j: :)${(f)log}}"
   print -r -- "  DONE=${(j: :)_FC_DONE}  FAILED=${(j: :)_FC_FAILED}  未执行=${_FC_PENDING}"
@@ -691,17 +682,17 @@ t_case_pkg_failure() {
   _FC_REG+=(
     'p4:title'  'P4'
     'p4:views'  'manage'
-    'p4:manage' '_pkg_p4_list'
+    'p4:manage' '_t_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
     'p4:mutating' 'go'
     'p4:loop'     'peek'
-    'p4:runner'   '_pkg_p4_always_ok'
+    'p4:runner'   '_t_p4_always_ok'
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
-  _pkg_session p4 manage
+  _fc_session p4 manage
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
   print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 0）"
@@ -714,17 +705,17 @@ t_case_pkg_failure() {
   _FC_REG+=(
     'p4:title'  'P4'
     'p4:views'  'manage'
-    'p4:manage' '_pkg_p4_list'
+    'p4:manage' '_t_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
     'p4:mutating' 'go'
     'p4:loop'     'peek'
-    'p4:runner'   '_pkg_p4_always_err'
+    'p4:runner'   '_t_p4_always_err'
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
-  _pkg_session p4 manage
+  _fc_session p4 manage
   log=$(<"$logf")
   print -r -- "  runner 收到 ${#${(f)log}} 次调用（4 = 没提前中止）"
   rows=()
@@ -739,17 +730,17 @@ t_case_pkg_failure() {
   _FC_REG+=(
     'p4:title'  'P4'
     'p4:views'  'manage'
-    'p4:manage' '_pkg_p4_list'
+    'p4:manage' '_t_p4_list'
     'p4:manage:title'   'P4 Manage'
     'p4:manage:actions' 'go peek'
     'p4:manage:cols'    'name'
     'p4:mutating' 'go'
     'p4:loop'     'peek'
-    'p4:runner'   '_pkg_p4_interrupt'
+    'p4:runner'   '_t_p4_interrupt'
   )
   print -r -- 0 >"$cnt"
   : >"$logf"
-  _pkg_session p4 manage
+  _fc_session p4 manage
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
   print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 4，什么都没改成）"
@@ -757,36 +748,36 @@ t_case_pkg_failure() {
     unset "_FC_REG[p4:$k]"
   done
 
-  eval "_pkg_read() { $functions[_pkg_read_orig] }"
-  unfunction _pkg_read_orig _pkg_p4_list _pkg_p4_fail_second \
-              _pkg_p4_always_ok _pkg_p4_always_err _pkg_p4_interrupt
+  eval "_fc_fzf_read() { $functions[_t_read_orig] }"
+  unfunction _t_read_orig _t_p4_list _t_p4_fail_second \
+              _t_p4_always_ok _t_p4_always_err _t_p4_interrupt
   rm -f "$cnt" "$logf"
 }
 
-# 19. _pkg_read_rows：把查询输出收进 _FC_ROWS
+# 19. _fc_load_rows：把查询输出收进 _FC_ROWS
 #
 # 这里换掉了实现（原 while-read + arr+=()，O(n^2)），语义必须一模一样：
 #   - 空行丢掉
 #   - 末行没有换行也要收进来
-#   - 不改动行内容（tab 原样保留，那是 _pkg_display 的输入）
+#   - 不改动行内容（tab 原样保留，那是 _fc_render 的输入）
 #     回归点：曾经用 $(cat) slurp，命令替换会吃掉尾部换行，
 #     按行切完末尾多出一个空元素，不清掉就会变成一条空白候选。
-t_case_pkg_read_rows() {
+t_case_load_rows() {
   local out
   t_sep "常规输入：三行，含空行"
-  out=$(printf 'alpha\t1.0\n\nbeta\t2.0\n' | _pkg_read_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
+  out=$(printf 'alpha\t1.0\n\nbeta\t2.0\n' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
   print -r -- "  $out"
   t_sep "末行无换行"
-  out=$(printf 'alpha\t1.0\nbeta' | _pkg_read_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
+  out=$(printf 'alpha\t1.0\nbeta' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
   print -r -- "  $out"
   t_sep "只有空行"
-  out=$(printf '\n\n' | _pkg_read_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
+  out=$(printf '\n\n' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
   print -r -- "  $out"
   t_sep "无输入"
-  out=$(printf '' | _pkg_read_rows; print -r -- "n=${#_FC_ROWS}")
+  out=$(printf '' | _fc_load_rows; print -r -- "n=${#_FC_ROWS}")
   print -r -- "  $out"
   t_sep "空行与首尾空白不是一回事：'  ' 要留着"
-  out=$(printf '  \nx\t\n' | _pkg_read_rows; print -r -- "n=${#_FC_ROWS} [${(j:|:)${_FC_ROWS}}]")
+  out=$(printf '  \nx\t\n' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:|:)${_FC_ROWS}}]")
   print -r -- "  $out"
   _FC_ROWS=()
 }
@@ -794,15 +785,15 @@ t_case_pkg_read_rows() {
 # 20. 单列 + 无 mutating 动作的视图走流式路径
 #
 # 回归点（用户实测报出）：pnpmf -> search 一直不出候选，越等越久。
-# 重构后所有视图都先把整份列表读进 _FC_ROWS，而 _pkg_read_rows 原来的
+# 重构后所有视图都先把整份列表读进 _FC_ROWS，而 _fc_load_rows 原来的
 # while-read + 数组 append 是 O(n^2)（8 万行 172s，翻一倍 4 倍）。
 # search 的数据源是 all-the-package-names，有 448 万行，于是 fzf
 # 在一个多小时里一个候选都收不到。重构前的 _fzf_search 是
 # `$available | _fzf_tmp_write`，也就是直接流进 fzf，所以是秒开。
 #
 # 断言三件事：候选内容与缓冲路径一致（取首字段 + 丢空行）、
-# _FC_ROWS 全程为空、_pkg_display 一次都没被调用。
-t_case_pkg_stream() {
+# _FC_ROWS 全程为空、_fc_render 一次都没被调用。
+t_case_stream() {
   local cnt qcnt logf log
   local k
   local -a cand
@@ -814,13 +805,13 @@ t_case_pkg_stream() {
   print -r -- 0 >"$qcnt"
   : >"$logf"
 
-  functions[_pkg_read_orig]=$functions[_pkg_read]
-  functions[_pkg_display_orig]=$functions[_pkg_display]
-  _pkg_display() {
-    print -r -- '  *** 错误：流式视图不该调用 _pkg_display ***' >&2
+  functions[_t_read_orig]=$functions[_fc_fzf_read]
+  functions[_t_render_orig]=$functions[_fc_render]
+  _fc_render() {
+    print -r -- '  *** 错误：流式视图不该调用 _fc_render ***' >&2
     cat
   }
-  _pkg_read() {
+  _fc_fzf_read() {
     local n
     n=$(<"$cnt")
     n=$(( n + 1 ))
@@ -835,16 +826,16 @@ t_case_pkg_stream() {
       *) return 130 ;;
     esac
   }
-  # 计数器必须落文件：查询函数是在 _pkg_feed 的管道里跑的，出不了子 shell
-  _pkg_s_list() {
+  # 计数器必须落文件：查询函数是在 _fc_feed 的管道里跑的，出不了子 shell
+  _t_s_list() {
     print -r -- $(( $(<"$qcnt") + 1 )) >"$qcnt"
     printf 'alpha\t1.0\nbeta\t2.0\n\n'
   }
-  _pkg_s_runner() { print -r -- "act=$1 pkg=[$2]" >>"$logf"; return 0 }
+  _t_s_runner() { print -r -- "act=$1 pkg=[$2]" >>"$logf"; return 0 }
   _FC_REG+=(
     's1:title'        'S1'
     's1:views'        'search'
-    's1:search'       '_pkg_s_list'
+    's1:search'       '_t_s_list'
     's1:search:title' 'S1 Search'
     's1:search:actions' 'install'
     's1:search:cols'  'name'
@@ -852,20 +843,20 @@ t_case_pkg_stream() {
     # 交集为空正是可流式的判据
     's1:mutating'     'uninstall'
     's1:loop'         'install'
-    's1:runner'       '_pkg_s_runner'
+    's1:runner'       '_t_s_runner'
   )
 
-  _pkg_session s1 search
+  _fc_session s1 search
   log=$(<"$logf")
   printf '  查询被调用 %s 次（2 = 列表 + 动作后回到列表）\n' "$(<"$qcnt")"
   printf '  _FC_ROWS 长度 %d（0 = 流式路径不缓冲）\n' "${#_FC_ROWS}"
   printf '  动作收到: %s\n' "${(j: :)${(f)log}}"
   printf '  fzf 共被调用 %s 次（3 = 列表 + 子菜单 + 取消）\n' "$(<"$cnt")"
 
-  unfunction _pkg_read _pkg_display _pkg_s_list _pkg_s_runner
-  eval "_pkg_read() { $functions[_pkg_read_orig] }"
-  eval "_pkg_display() { $functions[_pkg_display_orig] }"
-  unfunction _pkg_read_orig _pkg_display_orig
+  unfunction _fc_fzf_read _fc_render _t_s_list _t_s_runner
+  eval "_fc_fzf_read() { $functions[_t_read_orig] }"
+  eval "_fc_render() { $functions[_t_render_orig] }"
+  unfunction _t_read_orig _t_render_orig
   for k in title views search search:title search:actions search:cols mutating loop runner; do
     unset "_FC_REG[s1:$k]"
   done
@@ -884,19 +875,19 @@ t_case_pkg_stream() {
   done
   ecos=(${(u)ecos})
   for eco in $ecos; do
-    for view in ${(s: :)$(_pkg_get $eco views)}; do
-      if _pkg_streamable "$eco" "$view"; then how=流式; else how=缓冲; fi
+    for view in ${(s: :)$(_fc_reg_get $eco views)}; do
+      if _fc_view_streamable "$eco" "$view"; then how=流式; else how=缓冲; fi
       printf '  %-4s %s/%s\n' "$how" "$eco" "$view"
     done
   done
   for view in npm/search pnpm/search; do
     eco=${view%%/*}; view=${view#*/}
-    _pkg_streamable "$eco" "$view" || { bad=1; printf '  *** 错误：%s 判成缓冲，search 会重新变成 O(n^2) ***\n' "$eco/$view" }
+    _fc_view_streamable "$eco" "$view" || { bad=1; printf '  *** 错误：%s 判成缓冲，search 会重新变成 O(n^2) ***\n' "$eco/$view" }
   done
   # 多列视图必须留在缓冲路径：它们要宽度预扫描，cut -f1 给不了对齐
   for view in npm/manage pnpm/outdated brew/manage gem/manage; do
     eco=${view%%/*}; view=${view#*/}
-    _pkg_streamable "$eco" "$view" && { bad=1; printf '  *** 错误：%s 是多列视图，不该判成流式 ***\n' "$eco/$view" }
+    _fc_view_streamable "$eco" "$view" && { bad=1; printf '  *** 错误：%s 是多列视图，不该判成流式 ***\n' "$eco/$view" }
   done
   (( bad )) || printf '  OK 448 万行的 search 是流式，多列视图仍走缓冲'
 }
@@ -908,7 +899,7 @@ t_case_pkg_stream() {
 #     结果只剩 "Fusion.app/..."。
 #     回归点 2：fzf 必须收 --ani。不给的话它把 \e[34m 当 5 个普通字符，
 #     既不上色也把这 9 个字节算进显示宽度，长行于是被提前截断。
-t_case_other_tail() {
+t_case_other_value() {
   # 一次声明完，别在后面再写 local line 之类 —— 变量已是 local 时重复
   # 声明（且不带赋值）会往 stdout 打一行 `line=...`，混进基线。
   local ESC=$'\e' BLUE RESET PAD r line v
@@ -919,15 +910,15 @@ t_case_other_tail() {
 
   t_sep "取值：掐掉对齐填充与颜色码"
   line="${(l:24:: :)KEY}${BLUE}value${RESET}"
-  print -r -- "  带色带填充 [$(_fzf_tail "$line")]  (应为 value)"
+  print -r -- "  带色带填充 [$(_other_value "$line")]  (应为 value)"
   line="${(l:24:: :)KEY}a b c"
-  print -r -- "  值含空格   [$(_fzf_tail "$line")]  (应为 a b c，不能只剩 c)"
+  print -r -- "  值含空格   [$(_other_value "$line")]  (应为 a b c，不能只剩 c)"
 
   t_sep "取值：值含空格时必须完整（回归点 1）"
   v=$(printenv __MISE_ORIG_PATH)
   if [[ -n $v ]]; then
     line="__MISE_ORIG_PATH${(l:20:: :)}${BLUE}${v}${RESET}"
-    r="${line%%[[:space:]]*} = $(_fzf_tail "$line")"
+    r="${line%%[[:space:]]*} = $(_other_value "$line")"
     print -r -- "  真实值 ${#v} 字符，输出 ${#r} 字符（应差 19 = 键名加 ' = '）"
     if [[ $r == "__MISE_ORIG_PATH = $v" ]]; then
       print -r -- '  OK 值完整保留'
@@ -1117,17 +1108,17 @@ t_case_uvf_rows() {
   unset 'uv_orig'
 }
 
-# 21. 配色层：角色名解析、颜色开关、_fzf_unpaint
+# 21. 配色层：角色名解析、颜色开关、_fc_sgr_strip
 #
 # 回归点 1：角色名写错必须**降级并告警**。查表不能靠判空 —— 'name' 在调色板里
-#   的值就是空串（明确不上色），和拼错的名字一样查不到值。所以 _fzf_prefix 用
+#   的值就是空串（明确不上色），和拼错的名字一样查不到值。所以 _fc_sgr_prefix 用
 #   [[ -v _FC_SGR[$s] ]] 查。这里断言拼错的名字仍会被发现，否则它会静默
 #   变成不上色，而配色错在哪个 view 上极难看出来。
 # 回归点 2：关色输出必须与「开色再剥色」逐字节相同。这条同时钉住了
-#   「色码不进对齐计算」—— _pkg_display 是先补齐后上色，任何一边动了
+#   「色码不进对齐计算」—— _fc_render 是先补齐后上色，任何一边动了
 #   都会在这里露出来（历史上那三行的起始列就因为剥色正则无效而整体偏 9）。
-# 回归点 3：_fzf_unpaint 认的是 SGR 本身，不是当前配色。fzf-other.zsh 的
-#   _fzf_tail 原来掐的是固定的首尾两段（绑定当时的配色），而 fzf --ansi
+# 回归点 3：_fc_sgr_strip 认的是 SGR 本身，不是当前配色。fzf-other.zsh 的
+#   _other_value 原来掐的是固定的首尾两段（绑定当时的配色），而 fzf --ansi
 #   已经先剥过一次，所以配色一换它就失效且不报错。断言里特意用调色板里
 #   没有的颜色（品红）做剥离 —— 用「当前用到的颜色」测是测不出来的。
 t_case_palette() {
@@ -1136,14 +1127,14 @@ t_case_palette() {
 
   t_sep "角色名 -> SGR 前缀"
   for spec in name have sep want msg 0 - ''; do
-    _fzf_prefix "$spec"
+    _fc_sgr_prefix "$spec"
     p=$_FC_SGR_PREFIX
     print -r -- "  ${(qq)spec} -> ${(qq)p}"
   done
 
   t_sep "数字 spec 仍认（旧的 cols 声明走这条兼容路）"
   for spec in 34 33 1\;32; do
-    _fzf_prefix "$spec"
+    _fc_sgr_prefix "$spec"
     p=$_FC_SGR_PREFIX
     print -r -- "  ${(qq)spec} -> ${(qq)p}"
   done
@@ -1151,13 +1142,13 @@ t_case_palette() {
   t_sep "未知角色名：降级为不上色 + 只告警一次"
   escf=$(mktemp)
   _FC_SGR_WARNED=0
-  _fzf_prefix nope 2>"$escf"
+  _fc_sgr_prefix nope 2>"$escf"
   p=$_FC_SGR_PREFIX
   print -r -- "  前缀=[${(qq)p}]（应为空串，即不上色）"
   print -r -- "  告警: $(<"$escf")"
-  # 第二次必须安静。_fzf_prefix 走输出变量而不是 print，正是为了这个标志
+  # 第二次必须安静。_fc_sgr_prefix 走输出变量而不是 print，正是为了这个标志
   # 能在当前 shell 里存活 —— 走命令替换的话赋值落在子 shell，每次都重吵一遍。
-  _fzf_prefix alsowrong 2>"$escf"
+  _fc_sgr_prefix alsowrong 2>"$escf"
   p=$_FC_SGR_PREFIX
   print -r -- "  再错一次: [$(<"$escf")]（应为空，一次 session 只吵一次）"
   rm -f "$escf"
@@ -1167,9 +1158,9 @@ t_case_palette() {
   _FC_REG+=('pal:manage:cols' 'name have sep want')
   _FC_ROWS=("alpha	1.0	=>	2.0"
              "much-longer-name	22	=>	22")
-  colored=("${(@f)$(_pkg_display pal manage)}")
+  colored=("${(@f)$(_fc_render pal manage)}")
   _FC_COLOR=0
-  plain=("${(@f)$(_pkg_display pal manage)}")
+  plain=("${(@f)$(_fc_render pal manage)}")
   _FC_COLOR=1
   print -r -- "  开色 ${#colored} 行 / 关色 ${#plain} 行"
   if [[ ${(j: :)plain} == *$'\e'* ]]; then
@@ -1180,7 +1171,7 @@ t_case_palette() {
   stripped=()
   local same=1
   for (( i = 1; i <= ${#colored}; i++ )); do
-    stripped[i]=$(_fzf_unpaint "$colored[i]")
+    stripped[i]=$(_fc_sgr_strip "$colored[i]")
     # 逐行比而不是把数组 join 后一次比：join 的分隔符是 flag 的字面量参数，
     # ${(j: :.)arr} 里的 $'\n' 不求值（和本项目里那一串 flag 陷阱同源），
     # 而且逐行比还能指出是哪一行开始不一致。
@@ -1197,12 +1188,12 @@ t_case_palette() {
   fi
   unset '_FC_REG[pal:manage:cols]'
 
-  t_sep "_fzf_unpaint：认 SGR 本身，与用哪套配色无关"
+  t_sep "_fc_sgr_strip：认 SGR 本身，与用哪套配色无关"
   # ${(ok)_FC_SGR}：o = 按键排序。不排的话关联数组的遍历顺序不保证，
   # 基线就会随机漂 —— 这类不稳定输出绝不能进基线。
   for role in ${(ok)_FC_SGR}; do
-    p=$(_fzf_paint "$role" 'X')
-    out=$(_fzf_unpaint "$p")
+    p=$(_fc_sgr_paint "$role" 'X')
+    out=$(_fc_sgr_strip "$p")
     if [[ $out == X ]]; then
       print -r -- "  ${(qq)role} ${(qq)p}X -> OK"
     else
@@ -1211,14 +1202,14 @@ t_case_palette() {
   done
   # 调色板里没有的颜色、多参数 SGR、24 位真彩：都不该影响剥离。
   for spec in $'\e[35m' $'\e[1;32m' $'\e[38;2;255;128;0m'; do
-    out=$(_fzf_unpaint "${spec}X${_FC_SGR_RESET}")
+    out=$(_fc_sgr_strip "${spec}X${_FC_SGR_RESET}")
     if [[ $out == X ]]; then
       print -r -- "  ${(qq)spec} -> OK"
     else
       print -r -- "  ${(qq)spec} -> *** 错误：剥完还剩 [${(qq)out}] ***"
     fi
   done
-  out=$(_fzf_unpaint $'a\tb\e[34mc\e[0md')
+  out=$(_fc_sgr_strip $'a\tb\e[34mc\e[0md')
   print -r -- "  混在中间: [${(qq)out}]（应为含一个真 tab）"
 }
 
@@ -1324,7 +1315,7 @@ t_case_readme() {
   # 用 grep -w 取词本身，不要用字符类切分 —— 那样会把 "brew:" 、"(find"
   # 这种带分隔符的碎片当成词，报出一堆假的「代码用了 X」。
   # head / tail 不单列：head 只跟 find 一起用；tail 在 gem 里是变量名。
-  # cut 是流式 search 路径的一部分（见 _pkg_streamable），sed 是 pipf 抠 index 页
+  # cut 是流式 search 路径的一部分（见 _fc_view_streamable），sed 是 pipf 抠 index 页
   # 链接用的（87 万行，见 _pipf_list_available），两者都必须列进来。
   # uv 放在最后：它是 alternation 里最短的一个，放前面会把 uvtool 之类也切进来
   # （-w 挡得住大部分，但没必要依赖它）。
@@ -1506,27 +1497,26 @@ t_run_all() {
   # 以前这里是 25 个直接调用，加用例的人很容易只加调用不加工具。
   local -a cases
   cases=(
-    t_case_underline
+    t_case_rule
     t_case_format
     t_case_read
     t_case_msg
-    t_case_header
-    t_case_split
+    t_case_split_row
     t_case_loop
-    t_case_pkg_display
-    t_case_pkg_drop
-    t_case_pkg_membership
-    t_case_pkg_get
-    t_case_pkg_coexist
-    t_case_pkg_session_stdin
-    t_case_pkg_pick_split
-    t_case_pkg_registry
-    t_case_pkg_keyshape
-    t_case_pkg_action_menu
-    t_case_pkg_failure
-    t_case_pkg_read_rows
-    t_case_pkg_stream
-    t_case_other_tail
+    t_case_render
+    t_case_drop_row
+    t_case_membership
+    t_case_reg_get
+    t_case_coexist
+    t_case_session_stdin
+    t_case_pick_split
+    t_case_registry
+    t_case_keyshape
+    t_case_action_menu
+    t_case_failure
+    t_case_load_rows
+    t_case_stream
+    t_case_other_value
     t_case_envf_width
     t_case_uvf_rows
     t_case_palette

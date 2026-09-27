@@ -73,10 +73,10 @@ _brewf_list_available() {
 _brewf_list_tap() { brew tap }
 
 # ---- 回滚 ----
-# brew 不能用通用的 _pkg_rollback：它要先定位 formula 所在的 tap 目录，
+# brew 不能用通用的 _fc_rollback：它要先定位 formula 所在的 tap 目录，
 # 才能对那一个文件做 git checkout。目录由包名推导，所以这层是自带的。
 # 也就没有 versions / current / install 三个注册表键 —— 它们只服务于
-# 通用 _pkg_rollback，填在这里反而会让人误以为 brew 走通用路径。
+# 通用 _fc_rollback，填在这里反而会让人误以为 brew 走通用路径。
 
 _brewf_brewdir() {           # $1=pkg -> formula 所在目录
   local f=$1.rb
@@ -132,30 +132,30 @@ _brewf_checkout() {
 
 _brewf_rollback() {          # $1=pkg
   local pkg=$1 dir old new
-  # _pkg_read 靠动态作用域读 header，所以这里可以 local 覆盖而不影响外层
+  # _fc_fzf_read 靠动态作用域读 header，所以这里可以 local 覆盖而不影响外层
   local header="Rollback $pkg"
   dir=$(_brewf_brewdir "$pkg")
   if [[ -z $dir ]]; then
-    _fzf_msg "No formulae or cask exists." "$pkg" && return 0
+    _fc_msg "No formulae or cask exists." "$pkg" && return 0
   fi
   old=$(_brewf_version_current "$pkg")
-  _fzf_msg "${old:-Not-installed}" "$pkg"
+  _fc_msg "${old:-Not-installed}" "$pkg"
   # --query 预填包名，与旧 _brewf_rollback 的 fzf_extra 一致。
   # git log 默认按时间倒序，--tiebreak=index 保证 fzf 不打乱它。
   new=$(print -l -- ${(f)"$(_brewf_version_list "$pkg")"} \
-    | _pkg_read --tiebreak=index --query="$pkg")
+    | _fc_fzf_read --tiebreak=index --query="$pkg")
   if [[ -z $new ]]; then
-    _fzf_msg "Rollback cancel." "$pkg" && return 0
+    _fc_msg "Rollback cancel." "$pkg" && return 0
     return 0
   fi
   # 旧 _fzf_read 末尾有 `perl -lane 'print $F[0]'`，把整行压成第一个词。
-  # 新 _pkg_read 原样返回整行，所以 hash 要在这里自己取。
+  # 新 _fc_fzf_read 原样返回整行，所以 hash 要在这里自己取。
   _brewf_checkout "$pkg" "${new%% *}" "$old"
 }
 
 # ---- 动作适配器 ----
 
-_brewf_info() { _brewf info "$1" | _fzf_pager }
+_brewf_info() { _brewf info "$1" | _fc_pager }
 _brewf_uses() { _brewf uses --installed "$1" }
 _brewf_deps() { _brewf deps "$1" --tree }
 _brewf_edit() { $EDITOR "$(_brewf formula "$1")" }
@@ -191,7 +191,7 @@ _FC_REG+=(
   # search 列的是**还没装**的 formula/cask，所以两个会改状态的动作都不能在这里：
   # uninstall（对没装的包卸载）和 unpin（没装的东西无从 pin）。
   # 两个入口都还在 —— manage 有 uninstall 与 unpin，pinned 也有。
-  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable），
+  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _fc_view_streamable），
   # 列表不再进内存，每次回到列表重跑一次 brew formulae（约 0.1s）。
   'brew:search:actions' 'install rollback options homepage info deps uses edit cat link unlink pin'
   'brew:search:cols'    'name'
@@ -225,5 +225,5 @@ _FC_REG+=(
 )
 
 brewf() {
-  _pkg_cmd brew
+  _fc_cmd brew
 }

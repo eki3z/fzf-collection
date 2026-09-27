@@ -38,11 +38,11 @@ dd  [34mee ff[0m
   (以上应为空)
 
 ===== 退出码：匹配时 =====
-  _pkg_read 退出码=0
+  _fc_fzf_read 退出码=0
   fzf 裸调用  退出码=0   ← 两者必须一致
 
 ===== 退出码：无匹配时必须透传 fzf 的 1（缺陷 B11 的回归点） =====
-  _pkg_read 退出码=1   ← 必须是 1，不能恒为 0
+  _fc_fzf_read 退出码=1   ← 必须是 1，不能恒为 0
   fzf 裸调用  退出码=1
 
 ===== 有 pkg =====
@@ -52,14 +52,6 @@ dd  [34mee ff[0m
 ===== 无 pkg：回退到固定标签，不再依赖 $caller =====
 
 [34mfzf-collection[0m: another message
-
-===== 在 zpf_manage 上下文中 =====
-zpf_manage:1: command not found: _fzf_header
-  []
-
-===== 在 zpf_outdated 上下文中 =====
-zpf_outdated:1: command not found: _fzf_header
-  []
 
 ===== 取首字段（参数展开，可移植） =====
   first=[lodash]
@@ -179,7 +171,7 @@ left-pad
   n=1 name=[only one]
 
 ===== 注册表自洽性（7 个 ecosystem） =====
-  _pkg_rollback 读的数据键：version-list version-current version-install
+  _fc_rollback 读的数据键：version-list version-current version-install
   OK 无碰撞，派发目标全部存在
   每个 view 都声明了 title/actions/cols 的：是
   已登记的 ecosystem：gem uv pip brew npm pnpm gh
@@ -373,7 +365,7 @@ watchdog->6.0.0]
   OK 关色输出不含 ESC
   OK 剥色后的开色输出 == 关色输出
 
-===== _fzf_unpaint：认 SGR 本身，与用哪套配色无关 =====
+===== _fc_sgr_strip：认 SGR 本身，与用哪套配色无关 =====
   'have' '[34mX[0m'X -> OK
   'msg' '[34mX[0m'X -> OK
   'name' 'X'X -> OK

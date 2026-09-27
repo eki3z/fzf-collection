@@ -10,7 +10,7 @@ _npmf() {
   npm "$1" --quiet --no-fund --no-audit --global "${@:2}"
 }
 
-# ---- 列表查询：输出 name<TAB>rest，由 _pkg_render 上色 ----
+# ---- 列表查询：输出 name<TAB>rest，由 _fc_render 上色 ----
 
 _npmf_list_outdated() {
   _npmf outdated --json \
@@ -56,10 +56,10 @@ _npmf_act() {              # 原生透传，保留旧驱动 update 前的提示
   _npmf "$1" "$2"
 }
 
-_npmf_info() { npm view "$1" | _fzf_pager }
+_npmf_info() { npm view "$1" | _fc_pager }
 _npmf_deps() { npm view "$1" dependencies }
-_npmf_homepage() { _fzf_homepage "$(npm view "$1" homepage)" }
-_npmf_rollback() { _pkg_rollback npm "$1" }
+_npmf_homepage() { _fc_homepage "$(npm view "$1" homepage)" }
+_npmf_rollback() { _fc_rollback npm "$1" }
 
 # ---- 注册表 ----
 
@@ -100,9 +100,9 @@ _FC_REG+=(
 
 npmf() {
   # REQUIRE npm install -g all-the-package-names
-  if ! _fzf_exist all-the-package-names; then
+  if ! _fc_have_cmd all-the-package-names; then
     print -r -- 'Error! please run "npm i -g all-the-package-names" first!'
     return 0
   fi
-  _pkg_cmd npm
+  _fc_cmd npm
 }

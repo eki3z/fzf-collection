@@ -49,7 +49,7 @@ _FC_REG+=(
 )
 
 ghf() {
-  # 旧 ghf 没有 view 菜单，直接就是仓库列表，所以绕过 _pkg_cmd
+  # 旧 ghf 没有 view 菜单，直接就是仓库列表，所以绕过 _fc_cmd
   # 的选单步骤，只登记一个 view 并直接进入。
-  _pkg_session gh repos
+  _fc_session gh repos
 }

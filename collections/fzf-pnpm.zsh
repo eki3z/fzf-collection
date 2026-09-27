@@ -53,10 +53,10 @@ _pnpmf_act() {
   esac
 }
 
-_pnpmf_info() { pnpm view "$1" | _fzf_pager }
+_pnpmf_info() { pnpm view "$1" | _fc_pager }
 _pnpmf_deps() { pnpm view "$1" dependencies }
-_pnpmf_homepage() { _fzf_homepage "$(pnpm view "$1" homepage)" }
-_pnpmf_rollback() { _pkg_rollback pnpm "$1" }
+_pnpmf_homepage() { _fc_homepage "$(pnpm view "$1" homepage)" }
+_pnpmf_rollback() { _fc_rollback pnpm "$1" }
 
 # ---- 注册表 ----
 
@@ -97,9 +97,9 @@ _FC_REG+=(
 
 pnpmf() {
   # REQUIRE pnpm add -g all-the-package-names
-  if ! _fzf_exist all-the-package-names; then
+  if ! _fc_have_cmd all-the-package-names; then
     print -r -- 'Error! please run "pnpm add -g all-the-package-names" first!'
     return 0
   fi
-  _pkg_cmd pnpm
+  _fc_cmd pnpm
 }

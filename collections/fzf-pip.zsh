@@ -82,7 +82,7 @@ _pipf_uninstall() {
     return 1
   fi
   # REQUIRE pip install pip-autoremove
-  if _fzf_exist pip-autoremove && [[ $1 != pip-autoremove ]]; then
+  if _fc_have_cmd pip-autoremove && [[ $1 != pip-autoremove ]]; then
     pip-autoremove "$1" --yes
   else
     _pipf uninstall --yes "$1"
@@ -98,11 +98,11 @@ _pipf_act() {
   esac
 }
 
-_pipf_info() { _pipf show "$1" | _fzf_pager }
+_pipf_info() { _pipf show "$1" | _fc_pager }
 _pipf_deps() { _pipf_extract "$1" Requires }
 _pipf_use() { _pipf_extract "$1" Required-by }
-_pipf_homepage() { _fzf_homepage "$(_pipf_extract "$1" Home-page)" }
-_pipf_rollback() { _pkg_rollback pip "$1" }
+_pipf_homepage() { _fc_homepage "$(_pipf_extract "$1" Home-page)" }
+_pipf_rollback() { _fc_rollback pip "$1" }
 
 # ---- 注册表 ----
 
@@ -123,7 +123,7 @@ _FC_REG+=(
   'pip:search:title'   'Pip Search'
   # search 列的是**还没装**的包，所以这里不能有 uninstall —— 对一个没装的包
   # 卸载没有意义，卸载入口只留在 manage。去掉它之后本视图也不再需要缓存列表，
-  # 于是走流式路径（见 base.zsh 的 _pkg_streamable）。
+  # 于是走流式路径（见 base.zsh 的 _fc_view_streamable）。
   'pip:search:actions' 'install rollback'
   'pip:search:cols'    'name'
 
@@ -146,4 +146,4 @@ _FC_REG+=(
   'pip:version-install'  '_pipf_version_install'
 )
 
-pipf() { _pkg_cmd pip }
+pipf() { _fc_cmd pip }

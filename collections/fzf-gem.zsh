@@ -98,11 +98,11 @@ _gemf_version_install() {
 # 参数一律显式声明，不再读调用者作用域（旧版靠 $pkg / $current / $new
 # 跨函数取值，_fzf_rollback 用 eval 注入，来源不可追踪）。
 
-_gemf_rollback() { _pkg_rollback gem "$1" }
+_gemf_rollback() { _fc_rollback gem "$1" }
 
-_gemf_info() { gem info "$1" | _fzf_pager }
+_gemf_info() { gem info "$1" | _fc_pager }
 _gemf_deps() { gem dependency "^$1\$" --prerelease }
-_gemf_homepage() { _fzf_homepage "$(_gemf_extract "$1" Homepage)" }
+_gemf_homepage() { _fc_homepage "$(_gemf_extract "$1" Homepage)" }
 
 # 改动类动作直接透传给 gem，只读与未知动作也透传（与旧 _gemf_switch 一致）
 _gemf_act() {
@@ -133,7 +133,7 @@ _FC_REG+=(
   'gem:search'         '_gemf_list_available'
   'gem:search:title'   'Gem Search'
   # search 列的是**还没装**的 gem，uninstall 在这里没有意义，入口只留在 manage。
-  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable）。
+  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _fc_view_streamable）。
   'gem:search:actions' 'install rollback'
   'gem:search:cols'    'name'
 
@@ -159,6 +159,6 @@ _FC_REG+=(
 )
 
 gemf() {
-  _pkg_cmd gem
+  _fc_cmd gem
   gem cleanup &>/dev/null
 }

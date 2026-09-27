@@ -11,7 +11,7 @@
 # -ga 是显式的：以前靠一句没有声明的赋值碰巧建出数组，数组性是隐式的。
 typeset -ga _FC_OPTS=(${=FZF_COLLECTION_OPTS})
 
-_fzf_exist() {
+_fc_have_cmd() {
   command -v "$@" &>/dev/null
 }
 
@@ -20,16 +20,16 @@ _fzf_exist() {
 # 标签必须显式传。原来这里回退到 $caller —— 那是旧驱动的自由变量，
 # 旧驱动删掉之后没有任何地方再给它赋值，于是单参调用会打出一个空标签
 # （"Rollback cancel.: "）。
-_fzf_msg() {
-  printf "\n%s: %s\n" "$(_fzf_paint msg "${2:-fzf-collection}")" "$1"
+_fc_msg() {
+  printf "\n%s: %s\n" "$(_fc_sgr_paint msg "${2:-fzf-collection}")" "$1"
 }
 
-_fzf_pager() {
+_fc_pager() {
   local pager
   pager="${PAGER:-less}"
-  if [ "$pager" = "less" ] && _fzf_exist less; then
+  if [ "$pager" = "less" ] && _fc_have_cmd less; then
     less -R
-  elif _fzf_exist "$pager"; then
+  elif _fc_have_cmd "$pager"; then
     $pager
   else
     cat
@@ -37,12 +37,12 @@ _fzf_pager() {
 }
 
 # SEE https://stackoverflow.com/a/68093509/13194984
-_fzf_underline() {
+_fc_rule() {
   printf -- '%s\n' "$1"
   printf -- '▔%.0s' {1..$#1}
 }
 
-_fzf_homepage() {
+_fc_homepage() {
   if [ -n "$1" ]; then
     echo "Open: $1 ..."
     open "$1"
@@ -55,7 +55,7 @@ _fzf_homepage() {
 #
 # 原来这里有 manage / pinned / outdated / general 四个分支，每个分支一条 perl
 # printf 规则（$rule 里用 perl 的 @F 与 %.15s）。迁移后包管理器全部走
-# _pkg_display，format 只剩 general 还被 pathf / envf 使用，另外三个分支无法到达，
+# _fc_render，format 只剩 general 还被 pathf / envf 使用，另外三个分支无法到达，
 # 所以删掉了。现在没有任何 perl 也没有 column。
 #
 # general 的语义（对照过 column -t 的输出）：
@@ -69,10 +69,10 @@ _fzf_format() {          # $format 由调用方设为 general
     print -r -- "Error: No such format: $format"
     return 0
   fi
-  # 着色在循环外解析一次：色码每行都一样，而逐行 _fzf_paint 是每行一次命令替换。
+  # 着色在循环外解析一次：色码每行都一样，而逐行 _fc_sgr_paint 是每行一次命令替换。
   # 两个变量而不是一个，正是为了「不上色时后缀也是空」——否则会留下裸的
-  # \e[0m，而 _fzf_unpaint 之外的消费者未必认得它。
-  _fzf_prefix have
+  # \e[0m，而 _fc_sgr_strip 之外的消费者未必认得它。
+  _fc_sgr_prefix have
   pre=$_FC_SGR_PREFIX
   if [[ -n $pre ]]; then post=$_FC_SGR_RESET; else post=''; fi
   # 末行没有换行时 read 返回非零但仍填了变量，所以要补一次判断
@@ -103,7 +103,7 @@ _fzf_format() {          # $format 由调用方设为 general
 # =============================================================================
 # 配色与 SGR
 #
-# CSI 序列只在这一段里出现。着色一律走 _fzf_prefix，剥色走 _fzf_unpaint ——
+# CSI 序列只在这一段里出现。着色一律走 _fc_sgr_prefix，剥色走 _fc_sgr_strip ——
 # 换配色时只改 _FC_SGR 一处。
 # =============================================================================
 
@@ -136,14 +136,14 @@ typeset -gA _FC_SGR=(
   have $'\e[34m'   # 已装版本、说明文字
   sep  ''          # '=>' 之类的连接符
   want $'\e[33m'   # 目标版本
-  msg  $'\e[34m'   # _fzf_msg 的标签
+  msg  $'\e[34m'   # _fc_msg 的标签
 )
 # 角色名写错只告警一次，且告警排在颜色开关之前 —— 配置错了即便当前不上色
 # 也该说出来。告警去重靠这个标志**在当前 shell 里被赋值**，所以下面的
-# _fzf_prefix 必须走输出变量而不是命令替换：命令替换跑在子 shell 里，
+# _fc_sgr_prefix 必须走输出变量而不是命令替换：命令替换跑在子 shell 里，
 # 赋的值出不来，于是每次渲染都会重吵一遍。
 typeset -gi _FC_SGR_WARNED=0
-# _fzf_prefix 的输出。同 _pkg_split_tabs -> _FC_FIELDS、_pkg_view_mutating ->
+# _fc_sgr_prefix 的输出。同 _fc_split_row -> _FC_FIELDS、_fc_reg_view_mutating ->
 # _FC_MUTATING 的约定：结果落在全局变量里，函数不 print，也不 fork。
 typeset -g _FC_SGR_PREFIX=''
 
@@ -165,7 +165,7 @@ typeset -g _FC_SGR_RESET=$'\e[0m'
 #   其余                  查 _FC_SGR 的角色名
 #
 # 数字那条是为兼容旧的 cols 声明（'0,34,0,33'）留的，两种写法都认。
-_fzf_prefix() {            # $1=spec
+_fc_sgr_prefix() {            # $1=spec
   local s=$1
   _FC_SGR_PREFIX=''
   if [[ -z $s || $s == 0 || $s == - ]]; then
@@ -194,13 +194,13 @@ _fzf_prefix() {            # $1=spec
 
 # 上色后原样输出文本。
 #
-# 只在入口层用（_fzf_msg 这类一整个命令调一次的地方）。**不要**拿它逐格调用：
+# 只在入口层用（_fc_msg 这类一整个命令调一次的地方）。**不要**拿它逐格调用：
 # 命令替换每格一次 fork，2 万行 × 4 列实测 51s，而直接拼接是 0.3s。
 # 逐行或逐列的场景用「循环外解析一次前缀，循环内纯拼接」，见 _fzf_format
-# 与 _pkg_display。
-_fzf_paint() {             # $1=spec $2=text
+# 与 _fc_render。
+_fc_sgr_paint() {             # $1=spec $2=text
   local p
-  _fzf_prefix "$1"
+  _fc_sgr_prefix "$1"
   p=$_FC_SGR_PREFIX
   [[ -n $p ]] || { print -r -- "$2"; return 0 }
   print -r -- "$p$2$_FC_SGR_RESET"
@@ -212,7 +212,7 @@ _fzf_paint() {             # $1=spec $2=text
 # flag 位置上的 [ 被当成 bracket expression（fzf-other.zsh 的旧注释记过这件事）。
 # 而 ${1//$'\e'\[[0-9;]*m/} 过度匹配：* 贪婪，会把整行吃到最后一个 m。
 # 两种都实测过，别改回去。
-_fzf_unpaint() {           # $1=行
+_fc_sgr_strip() {           # $1=行
   setopt localoptions extendedglob
   print -r -- "${1//$'\e'\[[0-9;]#m/}"
 }
@@ -221,7 +221,8 @@ _fzf_unpaint() {           # $1=行
 #   丢掉空行 -> 切列 -> 每列补齐到本列最大宽度 -> 列间 2 个空格 -> 末列不补
 #
 # $1 可选分隔符。给了就按它切（复刻 `column -s X -t`），没给就按空白切
-# （复刻 `column -s ' ' -t`）。两种模式的差别都在 _fzf_split 里。
+# （复刻 `column -s ' ' -t`）。两种模式的差别都在下面的切分处：给了分隔符时
+# 空行保留且不剥前导空白，没给时反过来。
 #
 # 四个容易漏掉的细节：
 #   - column 把连续分隔符当一个，且**空字段整个丢掉**（不占宽度也不占间隔），
@@ -296,7 +297,7 @@ _fzf_align() {          # $1=可选分隔符
 # 7 个包管理器的 collection 全部走这里。相对重构前的写法：
 #   - 列表是结构化行 name<TAB>f2<TAB>...
 #   - 列表默认整轮 session 只查询一次，缓存在 _FC_ROWS，动作后从内存删行
-#   - 例外：单列且没有可达 mutating 动作的视图走流式，见 _pkg_streamable
+#   - 例外：单列且没有可达 mutating 动作的视图走流式，见 _fc_view_streamable
 #   - 不写 /tmp 临时文件，不靠 funcstack 递归重入
 #   - 显示名由注册表提供，不再从函数名反推
 #   - 函数派发用 "$fn" 间接展开（zsh 的 nameref 不能派发函数，见计划 2.3）
@@ -316,9 +317,9 @@ _fzf_align() {          # $1=可选分隔符
 # 每个文件的头部都写着它由 fzf-collection.plugin.zsh 加载。
 # 同理删除的还有 _pkg_ready()：它的唯一职责就是诊断上面那个抢名字的情况。
 typeset -gA _FC_REG         # 注册表：_FC_REG[<eco>[:<view>]][:<field>] = value
-typeset -ga _FC_ROWS    # 当前 session 的列表，由 _pkg_session 独占
-typeset -ga _FC_FIELDS # _pkg_split_tabs 的输出
-typeset -gi _FC_STREAM # 1 = 当前 view 走流式路径（_pkg_feed 用），见 _pkg_streamable
+typeset -ga _FC_ROWS    # 当前 session 的列表，由 _fc_session 独占
+typeset -ga _FC_FIELDS # _fc_split_row 的输出
+typeset -gi _FC_STREAM # 1 = 当前 view 走流式路径（_fc_feed 用），见 _fc_view_streamable
 
 # 注册表读取。key 必须在变量里拼好再用于下标。
 #
@@ -327,7 +328,7 @@ typeset -gi _FC_STREAM # 1 = 当前 view 走流式路径（_pkg_feed 用），�
 # 于是 $eco:title 里的 ':t' 被解释成 tail，返回空字符串且没有任何报错。
 # 受影响的字段名（本项目全部踩过）：title / loop / runner / homepage /
 # rollback / search / tap。views / info / install 只是恰好没撞上。
-_pkg_get() {
+_fc_reg_get() {
   local key=$1 part
   shift
   for part in "$@"; do key="${key}:${part}"; done
@@ -337,11 +338,11 @@ _pkg_get() {
 # 读 view 级字段：_FC_REG[<eco>:<view>:<field>]。
 #
 # 单独拆一个函数，是因为 key 的分段顺序只有一处能写对。注册表约定是
-# eco:view:field，而 _pkg_get 是「eco 后面接什么就是什么」，于是
-# _pkg_get eco actions view 会拼出 eco:actions:view —— 读不到任何东西，
+# eco:view:field，而 _fc_reg_get 是「eco 后面接什么就是什么」，于是
+# _fc_reg_get eco actions view 会拼出 eco:actions:view —— 读不到任何东西，
 # 而且**不报错**，只是静默返回空。动作清单一空，回车就没有子菜单可弹，
 # 表现为「选中了却什么都没发生」。所以顺序必须封在这个函数的参数里。
-_pkg_view_get() {           # $1=eco $2=view $3=field
+_fc_reg_view_get() {           # $1=eco $2=view $3=field
   local key=$1
   key="${key}:${2}:${3}"
   [[ -n ${_FC_REG[$key]:-} ]] && print -r -- "${_FC_REG[$key]}"
@@ -349,13 +350,13 @@ _pkg_view_get() {           # $1=eco $2=view $3=field
 
 # fzf 读取。退出码透传，调用方靠它区分「选中」与「取消」（旧驱动的 B11）。
 # --tabstop=1：本驱动的行约定是「tab = 列分隔符，渲染成恰好 1 个空格」，
-# 列对齐由 _pkg_display 补空格完成，不交给 tab stop。
-_pkg_read() {
-  fzf "${_FC_OPTS[@]}" --tabstop=1 --header "$(_fzf_underline "$header")" "$@"
+# 列对齐由 _fc_render 补空格完成，不交给 tab stop。
+_fc_fzf_read() {
+  fzf "${_FC_OPTS[@]}" --tabstop=1 --header "$(_fc_rule "$header")" "$@"
 }
 
 # 按 tab 切分一行。不能用 ${(ps:\t:)var} —— flag 参数不接受 $'\t'（见计划 2.3）。
-_pkg_split_tabs() {        # $1=line -> _FC_FIELDS
+_fc_split_row() {        # $1=line -> _FC_FIELDS
   local rest=$1
   _FC_FIELDS=()
   while :; do
@@ -369,18 +370,18 @@ _pkg_split_tabs() {        # $1=line -> _FC_FIELDS
 # 展示层：把 _FC_ROWS（干净的 name<TAB>f2<TAB>... ）渲染成对齐且逐列着色的 fzf 行。
 #
 # 列数与配色由注册表 <eco>:<view>:cols 给出，**空格分隔**，每列一个 spec。
-# spec 是调色板里的角色名（见 _FC_SGR），值写错了由 _fzf_prefix 降级并告警：
+# spec 是调色板里的角色名（见 _FC_SGR），值写错了由 _fc_sgr_prefix 降级并告警：
 #   'name have sep want'  name | 蓝 | 无 | 黄   即 outdated 的四列双色
 #   'name have'           name | 蓝             即 manage 的两列
 #   'name'                单列                   即 search
 # 未声明 cols 时按单列处理。
-# 数字写法（'0,34,0,33'）仍然认，那是旧声明的兼容路径，见 _fzf_prefix。
+# 数字写法（'0,34,0,33'）仍然认，那是旧声明的兼容路径，见 _fc_sgr_prefix。
 #
 # 每列各自补齐到本列最大宽度，末列不补（避免尾随空白）。
 # 输出的行结构是  name<TAB><补齐><TAB>f2<TAB>f3...
 # 补齐单独占一个 tab 段，因此 ${line%%$'\t'*} 取到的 name 天然干净。
 # 配合 --tabstop=1（tab 渲染成 1 个空格）得到旧版 column -t 的对齐效果。
-_pkg_display() {           # $1=eco $2=view
+_fc_render() {           # $1=eco $2=view
   local eco=$1 view=$2
   local line cell seg out k first
   local -a cols widths flds segs
@@ -390,26 +391,26 @@ _pkg_display() {           # $1=eco $2=view
   # 回归点：zsh 5.9 在循环体内执行标量 local 时，会往 stdout 打一行
   # `NAME=<上一轮的值>`（含 ESC 的值显示成 $'\C-...'）。本函数的 stdout
   # 直接喂给 fzf，那一行会变成一条假候选（曾经表现为列表里出现 k=6）。
-  # 写对位置的话 _pkg_display 输出的每一行都以包名开头。
+  # 写对位置的话 _fc_render 输出的每一行都以包名开头。
   local -i csep=${_FC_COLUMN_GAP:-5}
 
   n=${#_FC_ROWS}
   (( n )) || return 0
 
-  cols=(${(s: :)$(_pkg_view_get "$eco" "$view" cols)})
+  cols=(${(s: :)$(_fc_reg_view_get "$eco" "$view" cols)})
   nf=$#cols
   (( nf )) || { cols=(0); nf=1 }
 
   # 逐列的着色前后缀在这里一次解析好，循环内只做字符串拼接。
   #
-  # 不能在循环里调 _fzf_paint：命令替换每格一次 fork，2 万行 × 4 列实测 51s，
-  # 而直接拼 $'\e['… 是 0.33s，预解析是 0.28s。这也是 _fzf_paint 只许在入口层
+  # 不能在循环里调 _fc_sgr_paint：命令替换每格一次 fork，2 万行 × 4 列实测 51s，
+  # 而直接拼 $'\e['… 是 0.33s，预解析是 0.28s。这也是 _fc_sgr_paint 只许在入口层
   # 用的原因。
   #
   # 宽度的预扫描仍然在补齐之后、着色之前 —— 色码不进 ${#cell}，
   # 所以对齐与配色互不干扰。
   for (( i = 1; i <= nf; i++ )); do
-    _fzf_prefix "${cols[i]}"
+    _fc_sgr_prefix "${cols[i]}"
     pre[i]=$_FC_SGR_PREFIX
     if [[ -n ${pre[i]} ]]; then post[i]=$_FC_SGR_RESET; else post[i]=''; fi
   done
@@ -420,7 +421,7 @@ _pkg_display() {           # $1=eco $2=view
   # 所以整个预扫描可以跳过：它要再把全表过一遍，4 万行就是 3~4s 白花。
   if (( nf > 1 )); then
     for line in "${_FC_ROWS[@]}"; do
-      _pkg_split_tabs "$line"
+      _fc_split_row "$line"
       flds=("${_FC_FIELDS[@]}")
       for (( i = 1; i <= nf; i++ )); do
         cell=${flds[i]:-}
@@ -430,7 +431,7 @@ _pkg_display() {           # $1=eco $2=view
   fi
 
   for line in "${_FC_ROWS[@]}"; do
-    _pkg_split_tabs "$line"
+    _fc_split_row "$line"
     flds=("${_FC_FIELDS[@]}")
     segs=()
     for (( i = 1; i <= nf; i++ )); do
@@ -484,7 +485,7 @@ _pkg_display() {           # $1=eco $2=view
 # ${(@f)$(cat)} 是一次 fork + 一次批量切分，80 万行 0.4s。
 # 代价是整份列表会短暂以单个字符串的形式驻留；只有走缓冲路径的视图会到这里，
 # 它们的行数都在几百到几千（outdated / manage / pinned / gem、pip 的 search）。
-_pkg_read_rows() {
+_fc_load_rows() {
   local -a lines
   lines=("${(@f)$(cat)}")
   # 命令替换会吃掉尾部换行，按行切完末尾可能多出一个空元素。
@@ -495,13 +496,13 @@ _pkg_read_rows() {
 # 该视图能不能走流式路径（不落 _FC_ROWS，直接把查询结果管道给 fzf）。
 #
 # 两个条件都要满足：
-#   1. cols 只声明一列。单列视图里 _pkg_display 的净效果就是「取首字段」——
+#   1. cols 只声明一列。单列视图里 _fc_render 的净效果就是「取首字段」——
 #      首列原样输出、不补齐、不上色，于是整层可以退化成 cut -f1。
 #   2. 视图的动作里没有一个是 mutating。没有 mutating 就没有删行，
 #      _FC_ROWS 也就没有存在理由。
 #
-# 满足时 _pkg_feed 的候选链是
-#     _pkg_query | cut -f1 | grep -v '^$' | fzf
+# 满足时 _fc_feed 的候选链是
+#     _fc_reg_query | cut -f1 | grep -v '^$' | fzf
 # 语义与缓冲路径一致（取首字段 + 丢空行），但 zsh 一行都不碰。
 # npm / pnpm 的 search（448 万行）走的正是这条：all-the-package-names 本身 0.7s，
 # cut + grep 加起来不到 0.2s，fzf 立刻开始出候选 —— 与重构前 _fzf_search 的
@@ -510,52 +511,52 @@ _pkg_read_rows() {
 #
 # 代价：每次回到列表都要重查一次（0.7s）。旧驱动用 /tmp 缓存文件避开这一下，
 # 那是本驱动刻意去掉的机制，这里不捡回来。
-_pkg_streamable() {        # $1=eco $2=view -> 返回 0 表示可流式
+_fc_view_streamable() {        # $1=eco $2=view -> 返回 0 表示可流式
   local eco=$1 view=$2 a m
   local -a acts muts cols
-  acts=(${(s: :)$(_pkg_view_get "$eco" "$view" actions)})
-  (( ${#acts} )) || acts=(${(s: :)$(_pkg_get "$eco" actions)})
-  _pkg_view_mutating "$eco" "$view"
+  acts=(${(s: :)$(_fc_reg_view_get "$eco" "$view" actions)})
+  (( ${#acts} )) || acts=(${(s: :)$(_fc_reg_get "$eco" actions)})
+  _fc_reg_view_mutating "$eco" "$view"
   muts=("${_FC_MUTATING[@]}")
   for a in "${acts[@]}"; do
     for m in "${muts[@]}"; do
       [[ $a == "$m" ]] && return 1
     done
   done
-  # cols 没声明时 _pkg_display 按单列处理，这里必须同样按单列算
-  cols=(${(s: :)$(_pkg_view_get "$eco" "$view" cols)})
+  # cols 没声明时 _fc_render 按单列处理，这里必须同样按单列算
+  cols=(${(s: :)$(_fc_reg_view_get "$eco" "$view" cols)})
   (( ${#cols} <= 1 )) || return 1
   return 0
 }
 
-# 送候选给 fzf，选中行写到 stdout。$1=eco $2=view，其余参数透传给 _pkg_read。
+# 送候选给 fzf，选中行写到 stdout。$1=eco $2=view，其余参数透传给 _fc_fzf_read。
 # 两条路径只在「候选从哪来」上不同，动作与子菜单逻辑完全共用。
-_pkg_feed() {
+_fc_feed() {
   local eco=$1 view=$2
   shift 2
   if (( _FC_STREAM )); then
-    _pkg_query "$eco" "$view" | cut -f1 | grep -v '^$' | _pkg_read "$@"
+    _fc_reg_query "$eco" "$view" | cut -f1 | grep -v '^$' | _fc_fzf_read "$@"
   else
     # 列表被清空时（最后一轮 mutating 全删完）不能让 print 打出一个空行 ——
     # 那会变成一条空白候选，让用户能选中它。直接不发任何行，fzf 立刻退出，
-    # 与 _pkg_display 在空表时 return 0 的效果一致。
+    # 与 _fc_render 在空表时 return 0 的效果一致。
     if (( ${#_FC_ROWS} )); then
-      print -rl -- "${_FC_ROWS[@]}" | _pkg_display "$eco" "$view" | _pkg_read "$@"
+      print -rl -- "${_FC_ROWS[@]}" | _fc_render "$eco" "$view" | _fc_fzf_read "$@"
     fi
   fi
 }
 
 # 调用注册表里登记的查询函数。缓冲路径整个 session 只调一次；
-# 流式路径每次渲染列表都调一次（见 _pkg_streamable 的代价说明）。
-_pkg_query() {
+# 流式路径每次渲染列表都调一次（见 _fc_view_streamable 的代价说明）。
+_fc_reg_query() {
   local fn
-  fn=$(_pkg_get "$1" "$2") || return 1
+  fn=$(_fc_reg_get "$1" "$2") || return 1
   "$fn"
 }
 
 # 精确删除匹配的行。不能用 ${(@)rows:#pat}：它按 glob 匹配整个元素，
 # 而元素含 tab，且 flag 参数塞不进 $'\t'（计划 2.3）。
-_pkg_drop() {
+_fc_drop_row() {
   local name=$1 line
   local -a keep
   for line in "${_FC_ROWS[@]}"; do
@@ -568,63 +569,63 @@ _pkg_drop() {
 #   _FC_REG[<eco>:<act>] 存在 -> 专用处理器，收一个包名参数
 #                       （rollback / info / deps / homepage / use / ...）
 #   否则               -> _FC_REG[<eco>:runner] 原生透传，收 (act, 包名)
-_pkg_act() {               # $1=eco $2=view $3=act $4=name
+_fc_act() {               # $1=eco $2=view $3=act $4=name
   local act=$3 fn
-  fn=$(_pkg_get "$1" "$act")
+  fn=$(_fc_reg_get "$1" "$act")
   if [[ -n $fn ]]; then
     "$fn" "$4"
   else
-    fn=$(_pkg_get "$1" runner) || return 1
+    fn=$(_fc_reg_get "$1" runner) || return 1
     "$fn" "$act" "$4"
   fi
 }
 
-_pkg_view_actions() {      # $1=eco $2=view -> _FC_ACTIONS（无动作则返回 1）
+_fc_reg_view_actions() {      # $1=eco $2=view -> _FC_ACTIONS（无动作则返回 1）
   local -a acts
-  acts=(${(s: :)$(_pkg_view_get "$1" "$2" actions)})
-  (( ! ${#acts} )) && acts=(${(s: :)$(_pkg_get "$1" actions)})
+  acts=(${(s: :)$(_fc_reg_view_get "$1" "$2" actions)})
+  (( ! ${#acts} )) && acts=(${(s: :)$(_fc_reg_get "$1" actions)})
   (( ${#acts} )) || return 1
   _FC_ACTIONS=("${acts[@]}")
 }
 
-_pkg_actions() {           # $1=eco $2=view
-  _pkg_view_actions "$1" "$2" || return 1
-  print -l -- "${_FC_ACTIONS[@]}" | _pkg_read
+_fc_actions() {           # $1=eco $2=view
+  _fc_reg_view_actions "$1" "$2" || return 1
+  print -l -- "${_FC_ACTIONS[@]}" | _fc_fzf_read
 }
 
 # 会把行移出列表的动作。view 级覆盖优先，缺了才回退到 eco 级。
 # 同样把解析拆出来，测试才能走真实路径而不是自己拼一遍 key。
-_pkg_view_mutating() {     # $1=eco $2=view -> _FC_MUTATING
+_fc_reg_view_mutating() {     # $1=eco $2=view -> _FC_MUTATING
   local -a m
-  m=(${(s: :)$(_pkg_view_get "$1" "$2" mutating)})
-  (( ! ${#m} )) && m=(${(s: :)$(_pkg_get "$1" mutating)})
+  m=(${(s: :)$(_fc_reg_view_get "$1" "$2" mutating)})
+  (( ! ${#m} )) && m=(${(s: :)$(_fc_reg_get "$1" mutating)})
   _FC_MUTATING=("${m[@]}")
 }
 
 # 回滚到指定版本。versions 列表只在此处取一次，不随 session 缓存。
 #
-# 三个数据键刻意不叫 versions / current / install：_pkg_act 用 _FC_REG[<eco>:<动作名>]
+# 三个数据键刻意不叫 versions / current / install：_fc_act 用 _FC_REG[<eco>:<动作名>]
 # 查专用处理函数，而 install 正是 search 视图的合法动作名。叫 install 的话，
 # 用户选「install」会命中回滚用的安装器，而且只收到包名一个参数。
 # 加 version- 前缀就不会和动作名相撞。
-_pkg_rollback() {          # $1=eco $2=pkg
+_fc_rollback() {          # $1=eco $2=pkg
   local eco=$1 pkg=$2 versions old new fn
-  fn=$(_pkg_get "$eco" version-list) || return 1
+  fn=$(_fc_reg_get "$eco" version-list) || return 1
   versions=$("$fn" "$pkg")
   if [[ -z $versions ]]; then
-    _fzf_msg "No versions." "$pkg" && return 0
+    _fc_msg "No versions." "$pkg" && return 0
   fi
-  old=$("$(_pkg_get "$eco" version-current)" "$pkg")
-  _fzf_msg "${old:-Not-installed}" "$pkg"
-  new=$(print -l -- ${(f)versions} | _pkg_read)
+  old=$("$(_fc_reg_get "$eco" version-current)" "$pkg")
+  _fc_msg "${old:-Not-installed}" "$pkg"
+  new=$(print -l -- ${(f)versions} | _fc_fzf_read)
   if [[ -z $new ]]; then
-    _fzf_msg "Rollback cancel." "$pkg" && return 0
+    _fc_msg "Rollback cancel." "$pkg" && return 0
   fi
   [[ $new == "$old" ]] && { print -n $'\nREINSTALL THE SAME VERSION after 2 seconds\n'; sleep 2 }
   # 第 3 个参数是回滚前的版本。多数 ecosystem 用不到（直接装新版本即可），
   # 但 gem 需要先按旧版本定位安装目录并卸载，所以传过去。
   # 已有的 handler 只用 $1 $2，多传一个参数不影响。
-  "$(_pkg_get "$eco" version-install)" "$pkg" "$new" "$old"
+  "$(_fc_reg_get "$eco" version-install)" "$pkg" "$new" "$old"
 }
 
 # 对选中的一批包执行一个动作。
@@ -637,17 +638,17 @@ _pkg_rollback() {          # $1=eco $2=pkg
 # 只读动作传 0 —— 失败不停止，因为只读动作没有改变任何状态，
 # 中止没有意义，「失败」也往往只是「没有结果」（例如 brew uses 查不到依赖）。
 #
-# 结果放进 _FC_DONE / _FC_FAILED，由 _pkg_session 决定要不要删行。
-_pkg_apply() {           # $1=eco $2=view $3=act $4=mutating?
+# 结果放进 _FC_DONE / _FC_FAILED，由 _fc_session 决定要不要删行。
+_fc_apply() {           # $1=eco $2=view $3=act $4=mutating?
   local eco=$1 view=$2 act=$3 strict=$4 p name
   _FC_DONE=()
   _FC_FAILED=()
   _FC_RC=0
   for p in "${(@f)_FC_PICKED}"; do
-    # ${p%%$'\t'*} 取到的就是干净 name —— _pkg_display 把对齐填充放在
+    # ${p%%$'\t'*} 取到的就是干净 name —— _fc_render 把对齐填充放在
     # 第一个 tab 之后，所以这里不需要额外剥空格
     name=${p%%$'\t'*}
-    if _pkg_act "$eco" "$view" "$act" "$name"; then
+    if _fc_act "$eco" "$view" "$act" "$name"; then
       _FC_DONE+=("$name")
       print
     else
@@ -662,7 +663,7 @@ _pkg_apply() {           # $1=eco $2=view $3=act $4=mutating?
 
 # 动作失败后的汇总。写清楚哪一项失败、后面的没做、成功几项，
 # 这样用户知道列表里剩下的东西是什么状态。
-_pkg_report() {          # $1=act
+_fc_report() {          # $1=act
   print -r -- ""
   # 130 = 128 + SIGINT。下载 formulae 时 Ctrl-C 是很常见的操作，
   # 说成「失败」会让用户以为包坏了，而实际上什么都没变。
@@ -676,38 +677,38 @@ _pkg_report() {          # $1=act
 }
 
 # view 循环：缓冲路径整轮 session 只查询一次，动作后从内存删行，不重查、不落盘；
-# 流式路径（_pkg_streamable）每次回到列表重查，但从不把列表读进 zsh。
-_pkg_session() {           # $1=eco $2=view
+# 流式路径（_fc_view_streamable）每次回到列表重查，但从不把列表读进 zsh。
+_fc_session() {           # $1=eco $2=view
   local eco=$1 view=$2 sel act p
   local -i strict
   local -a picked mutating loop opt
   typeset -ga _FC_PICKED _FC_DONE _FC_FAILED
   typeset -gi _FC_PENDING _FC_RC _FC_STREAM
 
-  header=$(_pkg_view_get "$eco" "$view" title)
-  [[ -n $header ]] || header=$(_pkg_get "$eco" title)
-  _pkg_view_mutating "$eco" "$view"
+  header=$(_fc_reg_view_get "$eco" "$view" title)
+  [[ -n $header ]] || header=$(_fc_reg_get "$eco" title)
+  _fc_reg_view_mutating "$eco" "$view"
   mutating=("${_FC_MUTATING[@]}")
-  loop=(${(s: :)$(_pkg_get "$eco" loop)})
-  opt=(${(s: :)$(_pkg_view_get "$eco" "$view" opt)})
+  loop=(${(s: :)$(_fc_reg_get "$eco" loop)})
+  opt=(${(s: :)$(_fc_reg_view_get "$eco" "$view" opt)})
 
   _FC_STREAM=0
-  if _pkg_streamable "$eco" "$view"; then
+  if _fc_view_streamable "$eco" "$view"; then
     _FC_STREAM=1
     # 清掉上一个 view 可能留下的行。流式路径不读它，但 _FC_ROWS 是全局的，
     # 留着上一批数据只会让人误以为本视图也缓冲过。
     _FC_ROWS=()
   else
-    _pkg_query "$eco" "$view" | _pkg_read_rows
+    _fc_reg_query "$eco" "$view" | _fc_load_rows
     if (( ! ${#_FC_ROWS} )); then
-      _fzf_msg "Nothing to show." "$header" && return 0
+      _fc_msg "Nothing to show." "$header" && return 0
     fi
   fi
 
   while :; do
     # 必须把列表管道给 fzf。漏掉这一步 fzf 会去读终端，
     # 把用户输入当成候选列表（表现为列出了完全无关的内容）。
-    sel=$(_pkg_feed "$eco" "$view" --multi $opt) || break
+    sel=$(_fc_feed "$eco" "$view" --multi $opt) || break
     [[ -n $sel ]] || break
     # 必须用 ${(f)sel} 或 "${(@f)sel}"。写成 ${(f)"$sel"}（带引号的展开配 (f) flag）
     # 是非法语法，且只在运行时才报 bad substitution —— zsh -n 检查不出来。
@@ -718,16 +719,16 @@ _pkg_session() {           # $1=eco $2=view
     # 内层：动作菜单。非 mutating 且在 loop 列表中的动作会留在原地，
     # 沿用旧驱动「同一选择可连续执行多个只读动作」的行为。
     while :; do
-      act=$(_pkg_actions "$eco" "$view") || break
+      act=$(_fc_actions "$eco" "$view") || break
       [[ -n $act ]] || break
 
       strict=0
       (( ${mutating[(Ie)$act]} )) && strict=1
 
-      if _pkg_apply "$eco" "$view" "$act" "$strict"; then
+      if _fc_apply "$eco" "$view" "$act" "$strict"; then
         # 全部成功
         if (( strict )); then
-          for p in "${_FC_DONE[@]}"; do _pkg_drop "$p"; done
+          for p in "${_FC_DONE[@]}"; do _fc_drop_row "$p"; done
           break
         fi
         (( ${loop[(Ie)$act]} )) || break
@@ -736,23 +737,23 @@ _pkg_session() {           # $1=eco $2=view
 
       # 只有 mutating 动作会走到这里。成功的那几个已经生效，必须移出列表，
       # 否则用户会以为它们还在；失败项与未执行项保持原样，可直接重试。
-      for p in "${_FC_DONE[@]}"; do _pkg_drop "$p"; done
+      for p in "${_FC_DONE[@]}"; do _fc_drop_row "$p"; done
       _FC_PENDING=$(( ${#_FC_PICKED} - ${#_FC_DONE} - ${#_FC_FAILED} ))
-      _pkg_report "$act"
+      _fc_report "$act"
       break
     done
   done
 }
 
-_pkg_cmd() {               # $1=eco
+_fc_cmd() {               # $1=eco
   local eco=$1 v
   local -a views
-  views=(${(s: :)$(_pkg_get "$eco" views)})
+  views=(${(s: :)$(_fc_reg_get "$eco" views)})
   (( ${#views} )) || return 1
-  header=$(_pkg_get "$eco" title)
+  header=$(_fc_reg_get "$eco" title)
   while :; do
-    v=$(print -l -- $views | _pkg_read) || return 0
+    v=$(print -l -- $views | _fc_fzf_read) || return 0
     [[ -n $v ]] || return 0
-    _pkg_session "$eco" "$v" || return 0
+    _fc_session "$eco" "$v" || return 0
   done
 }

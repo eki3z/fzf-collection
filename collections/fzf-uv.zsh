@@ -19,7 +19,7 @@ _uvf() {
 # 顶层行还可能带方括号注解，且顺序会随 --show-* 变：
 #   v0.1.0 [required: ==0.1.0] [CPython 3.14.7] [latest: 0.16.9] (/path/to/env)
 # 所以先从第一个 ` [` 截断，注解一律不进列 —— 否则 version 字段会变成
-# `1.0.0]`，manage 列表和 _pkg_drop 的首字段比对就全错了。
+# `1.0.0]`，manage 列表和 _fc_drop_row 的首字段比对就全错了。
 #
 # 截断模式里的 `[` 必须转义成 \[ ：参数展开的模式中 `[` 是字符组的开头，
 # 写成 ${line%% [*} 会被当成未闭合的字符组，报 "bad pattern" —— 而且是每一行
@@ -188,10 +188,10 @@ _uvf_deps() {
 }
 
 _uvf_homepage() {
-  _fzf_homepage "$(_uvf_pypi "$1" '.info | .project_urls.Homepage // .home_page // .project_url // ""')"
+  _fc_homepage "$(_uvf_pypi "$1" '.info | .project_urls.Homepage // .home_page // .project_url // ""')"
 }
 
-_uvf_rollback() { _pkg_rollback uv "$1" }
+_uvf_rollback() { _fc_rollback uv "$1" }
 
 # ---- 注册表 ----
 
@@ -211,7 +211,7 @@ _FC_REG+=(
   'uv:search'         '_uvf_list_available'
   'uv:search:title'   'Uv Tool Search'
   # search 列的是索引上**全部**包，绝大多数不是 tool，uninstall 对它们没有意义。
-  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _pkg_streamable）：
+  # 去掉 mutating 动作后本视图走流式路径（见 base.zsh 的 _fc_view_streamable）：
   # 87 万行不落进 zsh 内存，每次回到列表重抓一次（连抓带抠约 1s）。
   'uv:search:actions' 'install rollback homepage deps info'
   'uv:search:cols'    'name'
@@ -236,9 +236,9 @@ _FC_REG+=(
 )
 
 uvf() {
-  if ! _fzf_exist uv; then
+  if ! _fc_have_cmd uv; then
     print -r -- 'Error! uv is required.'
     return 0
   fi
-  _pkg_cmd uv
+  _fc_cmd uv
 }

@@ -26,12 +26,12 @@
 # 颜色码：fzf 带 --ansi 时输出已经剥掉了颜色，所以这步只是兜底。
 # 原来这里是掐固定的首尾两段（'$_FZF_BLUE' 前缀、'$_FC_SGR_RESET' 后缀），
 # 也就是把剥色和**当前配色**绑死了：换成别的颜色后它会静默失效，而且因为
-# 上面那条 --ansi 已经剥过一次，失效也不报错。现在统一走 _fzf_unpaint，
+# 上面那条 --ansi 已经剥过一次，失效也不报错。现在统一走 _fc_sgr_strip，
 # 认的是 SGR 序列本身，与用哪套配色无关。
-_fzf_tail() {             # $1=行
+_other_value() {             # $1=行
   local t=${1#"${1%%[[:space:]]*}"}
   while [[ $t == [[:space:]]* ]]; do t=${t#?}; done
-  t=$(_fzf_unpaint "$t")
+  t=$(_fc_sgr_strip "$t")
   print -r -- "$t"
 }
 
@@ -55,7 +55,7 @@ pathf() {
   done \
     | _fzf_format \
     | uniq \
-    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fzf_underline "$header")" --tiebreak=index \
+    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fc_rule "$header")" --tiebreak=index \
     | while IFS= read -r line; do
         # 原来这里是 `| perl -lane "$rule"`，$rule 为
         #   printf "%s/%s", glob($F[$#F]), $F[0]   （或 -d 时 printf "%s/", glob(...)）
@@ -64,7 +64,7 @@ pathf() {
         #
         # 这个 while 必须接在管道里。写成独立语句的话它读的是函数自己的
         # stdin，不是 fzf 的输出。
-        dir=$(_fzf_tail "$line")
+        dir=$(_other_value "$line")
         [[ $dir == '~'* ]] && dir=$HOME${dir#\~}
         if [[ "$1" == "-d" ]]; then
           print -r -- "$dir/"
@@ -107,7 +107,7 @@ envf() {
   done < <(printenv --null) \
     | sort -u \
     | _fzf_format \
-    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fzf_underline "$header")" \
+    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fc_rule "$header")" \
     | while IFS= read -r line; do
         # 显示行里的值已被截断，所以按 key 从环境重新取完整值。
         key=${line%%[[:space:]]*}
@@ -116,7 +116,7 @@ envf() {
         if (( ${+parameters[$key]} )); then
           print -r -- "$key = ${(P)key}"
         else
-          print -r -- "$key = $(_fzf_tail "$line")"
+          print -r -- "$key = $(_other_value "$line")"
         fi
       done
 }
