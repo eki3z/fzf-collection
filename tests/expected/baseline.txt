@@ -436,18 +436,6 @@ watchdog->6.0.0]
   OK   pip 的 outdated 用 jq，README 也列了
 
 ===== FZF_COLLECTION_OPTS 必须与 _fzf_opts 逐项一致 =====
-  *** 错误：与代码里的 _fzf_opts 不一致
-      README:  --ansi
---bind
---bind
---cycle
---exact
---header-first
---info
---no-multi
---reverse
---sort
---tiebreak
-      _fzf_opts: 
+  OK   一致
 
 ### END

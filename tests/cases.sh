@@ -625,7 +625,10 @@ t_case_pkg_failure() {
   local cnt logf line n log
   local k runner
   local -a rows
-  typeset -g SEL_ACT
+  # local 而不是 typeset -g：stub _pkg_read 是在 $(...) 子 shell 里被调的，
+  # zsh 动态作用域照样看得到调用者的 local，但它不该以全局的形式活过本用例。
+  # （插件自己也依赖同一个性质，见 base.zsh 的 _pkg_read 读 header。）
+  local SEL_ACT
   cnt=$(mktemp)
   logf=$(mktemp)
 
@@ -1437,31 +1440,102 @@ t_case_readme() {
   fi
 }
 
+# =============================================================================
+# 用例隔离
+#
+# 为什么需要这一层：t_case_read 里有 `_fzf_opts=()`（为了让退出码测试不受用户
+# opts 干扰）和 `header="Test"`，两处都没有恢复。于是从它之后的所有用例都在
+# 空 opts 下运行，t_case_readme 的 FZF_COLLECTION_OPTS 一致性门拿到一个空数组、
+# 打出「*** 错误」—— 而 baseline 把那段错误录成了预期输出。那道门从落地起就在
+# 报错，而基线「记录现状」的机制不可能发现这一点。
+#
+# 逐个用例快照再恢复，比「记得在用例里清理」可靠：漏掉的不是一次污染，而是
+# 下一个门的假失败，而假失败往往在几屏之外才被看见。
+# **新增插件全局时必须在这里加一行。**
+# =============================================================================
+
+typeset -ga _T_OPTS _T_ROWS _T_FIELDS _T_STREAM _T_ACTIONS _T_MUTATING
+typeset -ga _T_PICKED _T_DONE _T_FAILED
+typeset -gi _T_PENDING _T_RC
+typeset -g  _T_COLOR _T_SGR_WARNED _T_SGR_PREFIX _T_HEADER
+typeset -gA _T_REG
+
+_t_snapshot() {
+  _T_OPTS=("${_fzf_opts[@]}")
+  _T_ROWS=("${_PKG_ROWS[@]}")
+  _T_FIELDS=("${_PKG_FIELDS[@]}")
+  _T_STREAM=$_PKG_STREAM
+  _T_ACTIONS=("${_PKG_ACTIONS[@]}")
+  _T_MUTATING=("${_PKG_MUTATING[@]}")
+  _T_PICKED=("${_PKG_PICKED[@]}")
+  _T_DONE=("${_PKG_DONE[@]}")
+  _T_FAILED=("${_PKG_FAILED[@]}")
+  _T_PENDING=$_PKG_PENDING
+  _T_RC=$_PKG_RC
+  _T_COLOR=$_FZF_COLOR
+  _T_SGR_WARNED=$_FZF_ROLE_WARNED
+  _T_SGR_PREFIX=$_FZF_PRE
+  _T_HEADER=$header
+  # 整个注册表一起存：逐个 fixture 键登记的话，漏掉一个键就是漏掉一次污染。
+  # 代价是每个用例复制一次几百个键，可以接受。
+  _T_REG=("${(@kv)PKG}")
+}
+
+_t_restore() {
+  _fzf_opts=("${_T_OPTS[@]}")
+  _PKG_ROWS=("${_T_ROWS[@]}")
+  _PKG_FIELDS=("${_T_FIELDS[@]}")
+  _PKG_STREAM=$_T_STREAM
+  _PKG_ACTIONS=("${_T_ACTIONS[@]}")
+  _PKG_MUTATING=("${_T_MUTATING[@]}")
+  _PKG_PICKED=("${_T_PICKED[@]}")
+  _PKG_DONE=("${_T_DONE[@]}")
+  _PKG_FAILED=("${_T_FAILED[@]}")
+  _PKG_PENDING=$_T_PENDING
+  _PKG_RC=$_T_RC
+  _FZF_COLOR=$_T_COLOR
+  _FZF_ROLE_WARNED=$_T_SGR_WARNED
+  _FZF_PRE=$_T_SGR_PREFIX
+  header=$_T_HEADER
+  PKG=("${(@kv)_T_REG}")
+}
+
 t_run_all() {
-  t_case_underline
-  t_case_format
-  t_case_read
-  t_case_msg
-  t_case_header
-  t_case_split
-  t_case_loop
-  t_case_pkg_display
-  t_case_pkg_drop
-  t_case_pkg_membership
-  t_case_pkg_get
-  t_case_pkg_coexist
-  t_case_pkg_session_stdin
-  t_case_pkg_pick_split
-  t_case_pkg_registry
-  t_case_pkg_keyshape
-  t_case_pkg_action_menu
-  t_case_pkg_failure
-  t_case_pkg_read_rows
-  t_case_pkg_stream
-  t_case_other_tail
-  t_case_envf_width
-  t_case_uvf_rows
-  t_case_palette
-  t_case_readme
+  local c
+  # 用例清单是数据：加一个用例只加一行，不必记得包 snapshot/restore。
+  # 以前这里是 25 个直接调用，加用例的人很容易只加调用不加工具。
+  local -a cases
+  cases=(
+    t_case_underline
+    t_case_format
+    t_case_read
+    t_case_msg
+    t_case_header
+    t_case_split
+    t_case_loop
+    t_case_pkg_display
+    t_case_pkg_drop
+    t_case_pkg_membership
+    t_case_pkg_get
+    t_case_pkg_coexist
+    t_case_pkg_session_stdin
+    t_case_pkg_pick_split
+    t_case_pkg_registry
+    t_case_pkg_keyshape
+    t_case_pkg_action_menu
+    t_case_pkg_failure
+    t_case_pkg_read_rows
+    t_case_pkg_stream
+    t_case_other_tail
+    t_case_envf_width
+    t_case_uvf_rows
+    t_case_palette
+    t_case_readme
+  )
+  for c in "${cases[@]}"; do
+    _t_snapshot
+    $c
+    _t_restore
+  done
   printf '\n### END\n'
 }
