@@ -5,13 +5,13 @@
 # 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
 
 # 这两个命令（pathf / envf）不是包管理器，没有 view 与 action 的概念，
-# 所以不进注册表，各自带一个 header 变量。
+# 所以不进注册表，各自带一个 _FC_HEADER。
 
-# pathf 与 envf 的 fzf 调用显式带 --ansi。_FC_OPTS 里默认也有（见
-# fzf-collection.plugin.zsh 的 FZF_COLLECTION_OPTS 默认值），但那是用户可覆盖的
-# 变量 —— 一旦有人设 FZF_COLLECTION_OPTS 时漏掉 --ansi，_fzf_format 加的颜色
-# 就会被 fzf 当普通文本：不上色，还把 \e[34m 的 5+4 个字节算进显示宽度，
-# 于是长行被提前截断。候选由本文件上色的调用点自己声明这个依赖。
+# 两个命令的候选由 _fzf_format 上色，于是 fzf 必须知道候选里有 SGR 序列。
+# 以前这里是各自直接调 fzf 并显式带一份 --ansi，因为 _FC_OPTS 是用户可覆盖的
+# 变量 —— 一旦有人设 FZF_COLLECTION_OPTS 时漏掉 --ansi，fzf 会把 \e[34m 当
+# 5 个普通字符：既不上色，还把这 5+4 个字节算进显示宽度，于是长行被提前截断。
+# 现在两个命令都走 _fc_fzf_read，--ansi 由它无条件带上，这条依赖只有一处实现。
 #
 # 注意：这与 fzf 在 Kitty 键盘协议下把按键序列当文本插入查询框是两回事，
 # 那个问题 fzf 至今未修（junegunn/fzf#3208），与本插件无关。
@@ -39,9 +39,9 @@ _other_value() {             # $1=行
 # option -d return executable path
 
 pathf() {
-  local header format line dir
+  local _FC_HEADER format line dir
   local i
-  header="Find Path"
+  _FC_HEADER="Find Path"
   format="general"
 
   # 原来写的是 for i in $(echo ${PATH//:/ }) —— 一次 echo fork，
@@ -55,7 +55,7 @@ pathf() {
   done \
     | _fzf_format \
     | uniq \
-    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fc_rule "$header")" --tiebreak=index \
+    | _fc_fzf_read --tiebreak=index \
     | while IFS= read -r line; do
         # 原来这里是 `| perl -lane "$rule"`，$rule 为
         #   printf "%s/%s", glob($F[$#F]), $F[0]   （或 -d 时 printf "%s/", glob(...)）
@@ -79,10 +79,10 @@ pathf() {
 envf() {
   # key / val 在下面的 while 循环里用；都在函数开头声明，
   # 循环体内的标量 local 会污染 stdout（zsh 5.9）。
-  local header format rec line key val
+  local _FC_HEADER format rec line key val
   # local 一次性声明完，别在后面重复 local（zsh 5.9 会往 stdout 打 NAME=值）。
   local valmax=${_ENVF_VALMAX:-80}
-  header="Env"
+  _FC_HEADER="Env"
   format="general"
   # 用 NUL 分隔读，值里含换行时才不会被拆成两条记录。
   # zsh 的 read -d 能吃 NUL（read -r -d $'\0'），所以不需要 tr 或 perl。
@@ -107,7 +107,7 @@ envf() {
   done < <(printenv --null) \
     | sort -u \
     | _fzf_format \
-    | fzf "${_FC_OPTS[@]}" --ansi --header "$(_fc_rule "$header")" \
+    | _fc_fzf_read \
     | while IFS= read -r line; do
         # 显示行里的值已被截断，所以按 key 从环境重新取完整值。
         key=${line%%[[:space:]]*}

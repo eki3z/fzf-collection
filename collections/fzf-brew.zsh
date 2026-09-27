@@ -133,7 +133,7 @@ _brewf_checkout() {
 _brewf_rollback() {          # $1=pkg
   local pkg=$1 dir old new
   # _fc_fzf_read 靠动态作用域读 header，所以这里可以 local 覆盖而不影响外层
-  local header="Rollback $pkg"
+  local _FC_HEADER="Rollback $pkg"
   dir=$(_brewf_brewdir "$pkg")
   if [[ -z $dir ]]; then
     _fc_msg "No formulae or cask exists." "$pkg" && return 0

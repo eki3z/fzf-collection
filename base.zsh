@@ -321,6 +321,18 @@ typeset -ga _FC_ROWS    # 当前 session 的列表，由 _fc_session 独占
 typeset -ga _FC_FIELDS # _fc_split_row 的输出
 typeset -gi _FC_STREAM # 1 = 当前 view 走流式路径（_fc_feed 用），见 _fc_view_streamable
 
+# 当前画面的标题，由 _fc_cmd / _fc_session 设，_fc_fzf_read 读。
+#
+# 它是全局而不是参数，而且**请不要再把它改成参数**：这一层之下要读标题的
+# 有三处 —— 动作子菜单、rollback 的版本选择器、view 菜单 —— 它们各自距
+# _fc_session 两三层调用，而中间还夹着动作派发：_fc_apply -> _fc_act ->
+# handler。把标题穿过去意味着 5 个签名各自多一个参数、并且多数 handler 并不
+# 关心它。它是货真价实的 session 状态，_FC_ROWS 也是。
+#
+# 它以前叫 `header`，不带前缀，于是覆盖了用户 .zshrc 里的同名变量，跑完还
+# 留一个脏值在全局。现在这个名字属于插件，撞不掉了。
+typeset -g _FC_HEADER=''
+
 # 注册表读取。key 必须在变量里拼好再用于下标。
 #
 # 绝对不要写 ${_FC_REG[$eco:title]} —— zsh 会把 ':' 后的首字母当成参数修饰符：
@@ -348,11 +360,24 @@ _fc_reg_view_get() {           # $1=eco $2=view $3=field
   [[ -n ${_FC_REG[$key]:-} ]] && print -r -- "${_FC_REG[$key]}"
 }
 
-# fzf 读取。退出码透传，调用方靠它区分「选中」与「取消」（旧驱动的 B11）。
-# --tabstop=1：本驱动的行约定是「tab = 列分隔符，渲染成恰好 1 个空格」，
-# 列对齐由 _fc_render 补空格完成，不交给 tab stop。
+# fzf 读取。全仓库唯一调用 fzf 的地方。退出码透传，调用方靠它区分
+# 「选中」与「取消」（旧驱动的 B11）。
+#
+# 三个选项在这里、且只能在这里给：
+#   --tabstop=1  本驱动的行约定是「tab = 列分隔符，渲染成恰好 1 个空格」，
+#                列对齐由 _fc_render 补空格完成，不交给 tab stop
+#   --ansi       候选行里带 SGR 序列（调色板着色的那一层）。不给的话 fzf
+#                把 \e[34m 当 5 个普通字符：既不上色，还把这 5+4 个字节算进
+#                显示宽度，于是长行被提前截断
+#   --header     从 _FC_HEADER 取，见那里为什么是全局
+#
+# 以前 pathf / envf 绕过这个函数直接调 fzf，自己带一份 --ansi 和 --header。
+# 那意味着「必须带 --ansi」这条约束有两处实现，而 tests 里那道检查是
+# grep 源码里 `| fzf "` 的行数 —— 删掉那两处直接调用，grep 数到 0，0 == 0，
+# 门就通过了。现在统一到这里。
 _fc_fzf_read() {
-  fzf "${_FC_OPTS[@]}" --tabstop=1 --header "$(_fc_rule "$header")" "$@"
+  fzf "${_FC_OPTS[@]}" --tabstop=1 --ansi \
+    --header "$(_fc_rule "$_FC_HEADER")" "$@"
 }
 
 # 按 tab 切分一行。不能用 ${(ps:\t:)var} —— flag 参数不接受 $'\t'（见计划 2.3）。
@@ -685,8 +710,8 @@ _fc_session() {           # $1=eco $2=view
   typeset -ga _FC_PICKED _FC_DONE _FC_FAILED
   typeset -gi _FC_PENDING _FC_RC _FC_STREAM
 
-  header=$(_fc_reg_view_get "$eco" "$view" title)
-  [[ -n $header ]] || header=$(_fc_reg_get "$eco" title)
+  _FC_HEADER=$(_fc_reg_view_get "$eco" "$view" title)
+  [[ -n $_FC_HEADER ]] || _FC_HEADER=$(_fc_reg_get "$eco" title)
   _fc_reg_view_mutating "$eco" "$view"
   mutating=("${_FC_MUTATING[@]}")
   loop=(${(s: :)$(_fc_reg_get "$eco" loop)})
@@ -701,7 +726,7 @@ _fc_session() {           # $1=eco $2=view
   else
     _fc_reg_query "$eco" "$view" | _fc_load_rows
     if (( ! ${#_FC_ROWS} )); then
-      _fc_msg "Nothing to show." "$header" && return 0
+      _fc_msg "Nothing to show." "$_FC_HEADER" && return 0
     fi
   fi
 
@@ -750,7 +775,7 @@ _fc_cmd() {               # $1=eco
   local -a views
   views=(${(s: :)$(_fc_reg_get "$eco" views)})
   (( ${#views} )) || return 1
-  header=$(_fc_reg_get "$eco" title)
+  _FC_HEADER=$(_fc_reg_get "$eco" title)
   while :; do
     v=$(print -l -- $views | _fc_fzf_read) || return 0
     [[ -n $v ]] || return 0

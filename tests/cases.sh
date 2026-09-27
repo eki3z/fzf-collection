@@ -73,7 +73,7 @@ t_case_format() {
 #    保留这个用例是为了让「退出码必须透传」不再退化 —— 调用方靠它 break 循环。
 t_case_read() {
   _FC_OPTS=()
-  header="Test"
+  _FC_HEADER="Test"
 
   t_sep "退出码：匹配时"
   printf 'alpha\nbeta\n' | _fc_fzf_read --filter=alp >/dev/null
@@ -929,15 +929,35 @@ t_case_other_value() {
     print -r -- '  (本机没有 __MISE_ORIG_PATH，跳过)'
   fi
 
-  t_sep "fzf 调用必须带 --ansi（回归点 2）"
-  for f in "$root"/collections/fzf-other.zsh; do
-    [[ -f $f ]] || continue
-    n_all=$(grep -c '| fzf "' "$f")
-    n_ansi=$(grep -c '| fzf "[^"]*" --ansi' "$f")
-    print -r -- "  fzf 调用 $n_all 处，其中带 --ansi 的 $n_ansi 处"
-    (( n_all == n_ansi )) || { bad=1; print -r -- '  *** 有 fzf 调用缺 --ansi ***'; }
+  t_sep "fzf 只在 _fc_fzf_read 里被调用，且它带 --ansi（回归点 2）"
+  # 原来是 grep 本文件里 `| fzf "` 的行数，再数其中带 --ansi 的行数，两个数
+  # 相等就算通过。pathf 与 envf 改走 _fc_fzf_read 之后这两处直接调用消失了，
+  # 于是 0 == 0，那道门会**因为被测对象没了而通过**。这类门最危险的地方在于
+  # 它和「检查通过」在输出上长得一模一样。
+  #
+  # 现在断言的是两件不会因为重构而变空的事：base.zsh 里那唯一一处 fzf 调用
+  # 带着 --ansi；collections 下没有任何文件直接调 fzf。
+  if grep -qE '^\s*fzf .*--ansi' "$root"/base.zsh; then
+    print -r -- '  OK   base.zsh 的 fzf 调用带 --ansi'
+  else
+    bad=1
+    print -r -- '  *** 错误：base.zsh 里的 fzf 调用没带 --ansi ***'
+  fi
+  local f2 n2
+  n2=0
+  for f2 in "$root"/base.zsh "$root"/collections/*.zsh; do
+    [[ -f $f2 ]] || continue
+    if grep -qE '^\s*fzf ' "$f2"; then
+      if [[ $f2 == */base.zsh ]]; then
+        print -r -- "  OK   base.zsh 有 1 处 fzf 调用（唯一允许的）"
+      else
+        n2=$(( n2 + 1 ))
+        print -r -- "  *** 错误：${f2:t} 直接调用了 fzf，应走 _fc_fzf_read ***"
+      fi
+    fi
   done
-  (( bad )) || print -r -- '  OK'
+  (( n2 == 0 )) || bad=1
+  (( bad )) || print -r -- '  OK   全仓库只有 _fc_fzf_read 调 fzf'
 }
 
 # 18. envf 的显示宽度与取值还原
@@ -1466,7 +1486,7 @@ _t_snapshot() {
   _T_COLOR=$_FC_COLOR
   _T_SGR_WARNED=$_FC_SGR_WARNED
   _T_SGR_PREFIX=$_FC_SGR_PREFIX
-  _T_HEADER=$header
+  _T_HEADER=$_FC_HEADER
   # 整个注册表一起存：逐个 fixture 键登记的话，漏掉一个键就是漏掉一次污染。
   # 代价是每个用例复制一次几百个键，可以接受。
   _T_REG=("${(@kv)_FC_REG}")
@@ -1487,7 +1507,7 @@ _t_restore() {
   _FC_COLOR=$_T_COLOR
   _FC_SGR_WARNED=$_T_SGR_WARNED
   _FC_SGR_PREFIX=$_T_SGR_PREFIX
-  header=$_T_HEADER
+  _FC_HEADER=$_T_HEADER
   _FC_REG=("${(@kv)_T_REG}")
 }
 
