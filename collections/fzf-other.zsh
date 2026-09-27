@@ -30,7 +30,7 @@
 # 认的是 SGR 序列本身，与用哪套配色无关。
 _other_value() {             # $1=行
   local t=${1#"${1%%[[:space:]]*}"}
-  while [[ $t == [[:space:]]* ]]; do t=${t#?}; done
+  _fc_ltrim t
   t=$(_fc_sgr_strip "$t")
   print -r -- "$t"
 }
@@ -70,7 +70,7 @@ _other_format() {          # 首字段原样，其余合并成一段并染蓝，
   done
   (( any )) || return 0
   for line in "${lines[@]}"; do
-    while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
+    _fc_ltrim line
     first=${line%%[[:space:]]*}
     rest=${line#"$first"}
     # 首字段之外的部分要按空白重新拼接：旧规则是 perl 的 join(" ", @F[1 .. $#F])，

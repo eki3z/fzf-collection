@@ -42,7 +42,7 @@ _pipf_extract() {
   _pipf show "$1" 2>/dev/null | while IFS= read -r line; do
     [[ $line == *"$2: "* ]] || continue
     line=${line#*"$2: "}
-    while [[ $line == [[:space:]]* ]]; do line=${line#?}; done
+    _fc_ltrim line
     print -r -- "$line"
     break
   done

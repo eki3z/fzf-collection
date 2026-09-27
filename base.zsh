@@ -15,6 +15,24 @@ _fc_have_cmd() {
   command -v "$@" &>/dev/null
 }
 
+# 剥掉变量值的前导空白，就地改写。$1 是**变量名**，不是值。
+#
+# 为什么不是一个 while 循环：原来这个循环在四个地方各写一遍
+# （_gemf_extract、_pipf_extract、_other_value、_other_format），改一次逻辑要
+# 记得改四处。为什么不是「返回剥好的值」：那要命令替换，而 _other_format 是
+# 逐行调用的，pathf 的候选有 4900 行，每行 fork 一次是不能接受的。
+# 为什么不省掉这个函数、直接在调用点写 ${s##[[:space:]]#}：**它需要
+# extendedglob，而没开的时候它不报错，只是静默地什么都不剥** —— 实测
+# ${s##[[:space:]]#} 在默认选项下原样返回。localoptions 把这个陷阱关在函数里。
+#
+# eval 是必要的：zsh 5.9 没有 nameref（5.11 才有），而命令替换要 fork。
+# 实测 5000 次调用与原来的 while 循环同量级（974ms 对 995ms，那点时间在
+# 外层数组迭代上），所以这里换的是「一份逻辑」，不是速度。
+_fc_ltrim() {              # $1=变量名
+  setopt localoptions extendedglob
+  eval "$1=\${$1##[[:space:]]#}"
+}
+
 # $1=消息 $2=标签（是谁触发的，通常是包名）
 #
 # 标签必须显式传。原来这里回退到 $caller —— 那是旧驱动的自由变量，
