@@ -1,43 +1,25 @@
 #!/usr/bin/env zsh
-# 上面这行是文件元数据（供编辑器与格式化工具识别），不是解释器指令。
-# 本文件是库文件，由 fzf-collection.plugin.zsh 以 source 方式加载。
-# 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
-# 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
+# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
 
-# FZF_COLLECTION_OPTS 是一个字符串，要按空白切成数组再传给 fzf。
-# ${=var} 是 zsh 的强制分词 flag（默认不分词）。
-# 原来写的是 _FC_OPTS=($(echo "$FZF_COLLECTION_OPTS}")) —— 结果相同，
-# 但为了分词而 fork 一次 echo，插件每次加载都白付这个代价。
-# -ga 是显式的：以前靠一句没有声明的赋值碰巧建出数组，数组性是隐式的。
+# FZF_COLLECTION_OPTS 是字符串，按空白切成数组；${=var} 是 zsh 的强制分词 flag。
 typeset -ga _FC_OPTS=(${=FZF_COLLECTION_OPTS})
 
 _fc_have_cmd() {
   command -v "$@" &>/dev/null
 }
 
-# 剥掉变量值的前导空白，就地改写。$1 是**变量名**，不是值。
+# 剥掉前导空白，就地改写。$1 是变量名，不是值。
 #
-# 为什么不是一个 while 循环：原来这个循环在四个地方各写一遍
-# （_gemf_extract、_pipf_extract、_other_value、_other_format），改一次逻辑要
-# 记得改四处。为什么不是「返回剥好的值」：那要命令替换，而 _other_format 是
-# 逐行调用的，pathf 的候选有 4900 行，每行 fork 一次是不能接受的。
-# 为什么不省掉这个函数、直接在调用点写 ${s##[[:space:]]#}：**它需要
-# extendedglob，而没开的时候它不报错，只是静默地什么都不剥** —— 实测
-# ${s##[[:space:]]#} 在默认选项下原样返回。localoptions 把这个陷阱关在函数里。
-#
-# eval 是必要的：zsh 5.9 没有 nameref（5.11 才有），而命令替换要 fork。
-# 实测 5000 次调用与原来的 while 循环同量级（974ms 对 995ms，那点时间在
-# 外层数组迭代上），所以这里换的是「一份逻辑」，不是速度。
+# 就地是因为 _other_format 逐行调用它，而返回值得用命令替换（pathf 有 4900 行）。
+# eval 是因为 zsh 5.9 没有 nameref。
+# localoptions 是因为 ${s##[[:space:]]#} 需要 extendedglob，没开时不报错、
+# 只是静默地什么都不剥。
 _fc_ltrim() {              # $1=变量名
   setopt localoptions extendedglob
   eval "$1=\${$1##[[:space:]]#}"
 }
 
-# $1=消息 $2=标签（是谁触发的，通常是包名）
-#
-# 标签必须显式传。原来这里回退到 $caller —— 那是旧驱动的自由变量，
-# 旧驱动删掉之后没有任何地方再给它赋值，于是单参调用会打出一个空标签
-# （"Rollback cancel.: "）。
+# $1=消息 $2=标签（是谁触发的，通常是包名）。标签必须显式传。
 _fc_msg() {
   printf "\n%s: %s\n" "$(_fc_sgr_paint msg "${2:-fzf-collection}")" "$1"
 }
@@ -54,7 +36,7 @@ _fc_pager() {
   fi
 }
 
-# SEE https://stackoverflow.com/a/68093509/13194984
+# 在标题下面画一条等长的 ▔ 线。SEE https://stackoverflow.com/a/68093509/13194984
 _fc_rule() {
   printf -- '%s\n' "$1"
   printf -- '▔%.0s' {1..$#1}
@@ -69,69 +51,39 @@ _fc_homepage() {
   fi
 }
 
-# =============================================================================
-# 可覆盖项的默认值
+# ---- 可覆盖项的默认值 ----
 #
-# 这三个是**有文档的环境变量的默认值**，不是它们本身。调用点一律写成
-#     ${_ENV_VAR:-$_FC_...}
-# 也就是「值在代码里，改代码就改默认；要临时换就设环境变量」。
+# 这三个是有文档的环境变量的默认值，调用点一律写 ${_ENV_VAR:-$_FC_...}。
+# 环境变量是覆盖，不是必填。
 #
-# 为什么不干脆在调用点写字面量（${_UVF_INDEX:-https://pypi.org/simple} 那种）：
-# 三个调用点分散在两个 collection 文件里，README 还要各抄一份那个数字或 URL。
-# 收在这里之后「默认是什么」只有一个答案，而且 t_case_readme 会检查 README 写的是
-# 这三个名字，而不是一份会漂的字面量。
-#
-# 为什么不干脆删掉环境变量、只留常量 —— 每一个都对应一个默认值覆盖不了的情况，
-# 删掉是砍功能，不是清理：
-#   _FC_ENVF_WIDTH      envf 的值显示多宽。80 是给窄终端的默认；宽终端的用户要
-#                       调大，而 PATH / FPATH / LS_COLORS 动辄上千字符。
-#   _FC_PYPI_INDEX      uvf search 抓名字的 index 页。走镜像的用户必须换，否则
-#                       抓不到东西。它也不能自动取：uv 没有子命令能打印它解析到
-#                       的 index（--show-settings 给的是一棵 Debug 树）。
+#   _FC_ENVF_WIDTH      envf 的值显示多宽。80 给窄终端；PATH 一类动辄上千字符，
+#                       宽终端要调大。
+#   _FC_PYPI_INDEX      uvf search 抓名字的 index 页。走镜像的用户必须换，而它
+#                       无法自动取：uv 没有子命令能打印它解析到的 index。
 #   _FC_PYPI_JSON_BASE  PyPI JSON API 的根，给 list-versions / info / deps /
-#                       homepage 用。**刻意不跟 _FC_PYPI_INDEX 走**：镜像的 JSON
-#                       快照可能很旧（实测 tuna 的 ruff 还停在 0.5.7，PyPI 已经
-#                       0.16.9），而这四处要新鲜元数据 —— 拿旧快照列版本，rollback
-#                       会给出一堆装不上的选项。search 抓名字不在乎新旧，所以那边
-#                       用镜像、这边用 pypi.org。理由写在两个常量并排的地方，
-#                       否则下一个人会顺手把它们绑成一个。
-# =============================================================================
+#                       homepage。**刻意不跟 _FC_PYPI_INDEX 走**：镜像的 JSON
+#                       快照可能很旧（tuna 的 ruff 还停在 0.5.7，PyPI 已 0.16.9），
+#                       而这四处要新元数据，否则 rollback 给出装不上的版本。
 typeset -g _FC_ENVF_WIDTH=80
 typeset -g _FC_PYPI_INDEX='https://pypi.org/simple'
 typeset -g _FC_PYPI_JSON_BASE='https://pypi.org/pypi'
 
-# =============================================================================
-# 配色与 SGR
+# ---- 配色与 SGR ----
 #
-# CSI 序列只在这一段里出现。着色一律走 _fc_sgr_prefix，剥色走 _fc_sgr_strip ——
-# 换配色时只改 _FC_SGR 一处。
-# =============================================================================
+# CSI 序列只出现在这一段。着色走 _fc_sgr_prefix，剥色走 _fc_sgr_strip，
+# 换配色只改 _FC_SGR 一处。
 
-# 分隔符。TAB 与换行都必须先落到变量：
-#   - ${s//, /$'\n'} 里的 $'\n' 不会被求值（替换位和 flag 参数一样是字面量），
-#     会原样输出这四个字符
-#   - ${(ps:\t:)x} 的 flag 参数同样不接受 $'\t'
-# 而且必须在文件顶层声明：循环体内的标量 local 会让 zsh 5.9 往 stdout 打一行
-# 赋值，那一行会变成一条假候选（曾经表现为 pnpmf 列表里混进 k=6）。
-#
-# 这里原来只有 _FC_NL，而 _B_TAB / _G_TAB / _G_NL / _PIP_NL / _UVF_TAB 分散在
-# 四个 collection 里各声明一份 —— 同一个常量四种前缀，同一段说明复制四遍，
-# 而读者永远不会同时打开四个文件。现在 collection 里一个全局都不剩。
+# 分隔符。TAB 与换行都必须先落到变量：$'\n' 在替换位与 flag 参数里都是字面量，
+# 不落变量就会原样输出那几个字符。必须在文件顶层声明：循环体内的标量 local 会让
+# zsh 5.9 往 stdout 打一行赋值，变成一条假候选。
 typeset -g _FC_TAB=$'\t'
 typeset -g _FC_NL=$'\n'
-# 这里原来还有 _FC_SEP，是 _fzf_format 与 _fzf_align 之间的通道：格式层用
-# 它把「首字段」和「合并后的其余字段」隔开，再交给对齐层按它切列。现在这两个
-# 函数都搬进了 collections/fzf-other.zsh，通道变成同文件内的一次函数调用，
-# 于是分隔符退回成 _other_format 的 local，全局少一个。
 
-# 调色板：角色名 -> SGR 前缀。
+# 调色板：角色名 -> SGR 前缀。用角色名而不是颜色名，cols 才是自解释的
+# （'name have sep want'），换主题也只改这张表。
 #
-# 用角色名而不是颜色名，是为了让注册表里的 cols 自解释：'name have sep want'
-# 一眼看出四列各是什么，而 '0,34,0,33' 只能靠 base.zsh 里的注释解释。
-# 反过来，换主题只改这张表，14 处 cols 声明一个字都不用动。
-#
-# 值为空串 = **明确不着色**，不是「没配」。所以解析器必须用 [[ -v ]] 查表，
-# 靠取值判空的话，拼错的名字会和 name 一样静默降级 —— 查表是唯一的分界。
+# 值为空串 = 明确不上色，不是「没配」。所以解析器必须用 [[ -v ]] 查表：
+# 靠取值判空的话，拼错的名字会和 name 一样静默降级。
 typeset -gA _FC_SGR=(
   name ''          # 包名 / 首字段
   have $'\e[34m'   # 已装版本、说明文字
@@ -139,43 +91,26 @@ typeset -gA _FC_SGR=(
   want $'\e[33m'   # 目标版本
   msg  $'\e[34m'   # _fc_msg 的标签
 )
-# 角色名写错只告警一次，且告警排在颜色开关之前 —— 配置错了即便当前不上色
-# 也该说出来。告警去重靠这个标志**在当前 shell 里被赋值**，所以下面的
-# _fc_sgr_prefix 必须走输出变量而不是命令替换：命令替换跑在子 shell 里，
-# 赋的值出不来，于是每次渲染都会重吵一遍。
+# 角色名写错只告警一次，告警排在颜色开关之前：配置错了即便不上色也该说。
+# 去重靠这个标志在当前 shell 里被赋值，所以 _fc_sgr_prefix 必须走输出变量。
 typeset -gi _FC_SGR_WARNED=0
-# _fc_sgr_prefix 的输出。同 _fc_split_row -> _FC_FIELDS、_fc_reg_view_mutating ->
-# _FC_MUTATING 的约定：结果落在全局变量里，函数不 print，也不 fork。
+# _fc_sgr_prefix 的输出。结果落在全局变量里，函数不 print，也不 fork。
 typeset -g _FC_SGR_PREFIX=''
 
-# 颜色转义序列。$'\e[34m' 写在双引号里不会被求值（和 $'\n' 同一个陷阱），
-# 只会得到字面的 `$'\e[34m'` 七个字符，所以必须先落到变量里。
-# 这里只有 RESET：原先还有个 _FZF_BLUE，着色改走调色板后它已无人引用，
-# 留着还会在换色后变成一个撒谎的名字（角色 have 改成青色，它就跟着变青）。
+# $'\e[34m' 写在双引号里不求值（同 $'\n'），必须先落到变量里。
 typeset -g _FC_SGR_RESET=$'\e[0m'
 
-# 解析一个配色 spec，结果写进 _FC_SGR_PREFIX（空串 = 不着色）。
+# 解析一个配色 spec（_FC_SGR 的键），结果写进 _FC_SGR_PREFIX，空串 = 不着色。
+# 走输出变量而不是 print + $(...)：命令替换在子 shell 里跑，_FC_SGR_WARNED
+# 的赋值出不来，去重就失效。
 #
-# 用输出变量而不是 print + $(...)：命令替换在子 shell 里跑，_FC_SGR_WARNED
-# 的赋值出不来，去重就失效了；而这里每个 view 每次渲染都要问一次颜色，
-# 走命令替换还白白 fork 一次。约定与 _FC_FIELDS / _FC_MUTATING 一致。
-#
-# spec 就是 _FC_SGR 的键，也就是角色名。空串与未定义的名字都表示不上色 ——
-# 上不上色是**调色板的值**（name 与 sep 的值就是空串），不是 spec 自己的写法。
-#
-# 这里原来还认两种写法，都删了：
-#   0 与 -           「不上色」的旧写法。现在由角色名表达，值在调色板里。
-#   34、1;32 等数字  把 SGR 参数直接写进注册表。删掉的理由不是兼容，是它让
-#                    cols 一个列表里混着两种类型：'0,34,0,33' 里的 0 是
-#                    「不着色」而 34 是「蓝色」，一个是开关一个是参数。
-# 删掉之后写错的名字（含数字）一律告警并降级 —— 以前 0 静默合法，
-# 而拼错一个角色名和它长得一模一样。
+# spec 只接受角色名。上不上色是调色板的值，不是 spec 的写法。
 _fc_sgr_prefix() {            # $1=spec
   local s=$1
   _FC_SGR_PREFIX=''
   [[ -n $s ]] || return 0
-  # 挡掉含 ']' 的输入：[[ -v _FC_SGR[$s] ]] 里 zsh 会把括号里的内容当下标
-  # 表达式求值，而 spec 是注册表字符串里的数据，不能假定它老实。
+  # 先挡掉 ']'：[[ -v _FC_SGR[$s] ]] 里 zsh 会把括号里的内容当下标表达式求值，
+  # 而 spec 是注册表里的数据。
   if [[ $s == *[^a-z0-9_-]* ]] || [[ ! -v _FC_SGR[$s] ]]; then
     if (( ! _FC_SGR_WARNED )); then
       _FC_SGR_WARNED=1
@@ -184,17 +119,14 @@ _fc_sgr_prefix() {            # $1=spec
     return 0
   fi
   s=${_FC_SGR[$s]}
-  # 角色合法性先判、开关后判：配置写错时即便颜色关着也要报。
+  # 合法性先判、开关后判：配置写错时即便不上色也要报。
   (( _FC_COLOR )) || return 0
   _FC_SGR_PREFIX=$s
 }
 
-# 上色后原样输出文本。
-#
-# 只在入口层用（_fc_msg 这类一整个命令调一次的地方）。**不要**拿它逐格调用：
-# 命令替换每格一次 fork，2 万行 × 4 列实测 51s，而直接拼接是 0.3s。
-# 逐行或逐列的场景用「循环外解析一次前缀，循环内纯拼接」，见 _other_format
-# 与 _fc_render。
+# 上色后原样输出文本。只在入口层用，**不要**逐格调用：命令替换每格一次 fork，
+# 2 万行 × 4 列实测 51s，而直接拼接是 0.3s。逐行或逐列的场景用「循环外解析
+# 一次前缀，循环内纯拼接」，见 _other_format 与 _fc_render。
 _fc_sgr_paint() {             # $1=spec $2=text
   local p
   _fc_sgr_prefix "$1"
@@ -203,42 +135,29 @@ _fc_sgr_paint() {             # $1=spec $2=text
   print -r -- "$p$2$_FC_SGR_RESET"
 }
 
-# 剥掉一行里全部的 SGR 序列。
-#
-# 必须开 extendedglob。${1//$'\e'\[[0-9;]#m/} 在 zsh 5.9 下**不匹配** ——
-# flag 位置上的 [ 被当成 bracket expression（fzf-other.zsh 的旧注释记过这件事）。
-# 而 ${1//$'\e'\[[0-9;]*m/} 过度匹配：* 贪婪，会把整行吃到最后一个 m。
-# 两种都实测过，别改回去。
+# 剥掉一行里全部的 SGR 序列。必须开 extendedglob：${1//$'\e'\[[0-9;]#m/} 在
+# zsh 5.9 下不匹配（flag 位置上的 [ 被当成 bracket expression），而
+# ${1//$'\e'\[[0-9;]*m/} 过度匹配，贪婪到把整行吃到最后一个 m。
 _fc_sgr_strip() {           # $1=行
   setopt localoptions extendedglob
   print -r -- "${1//$'\e'\[[0-9;]#m/}"
 }
 
-# =============================================================================
-# 驱动层
+# ---- 驱动层 ----
 #
-# 7 个包管理器的 collection 全部走这里。相对重构前的写法：
+# 7 个包管理器的 collection 全部走这里：
 #   - 列表是结构化行 name<TAB>f2<TAB>...
-#   - 列表默认整轮 session 只查询一次，缓存在 _FC_ROWS，动作后从内存删行
-#   - 例外：单列且没有可达 mutating 动作的视图走流式，见 _fc_view_streamable
-#   - 不写 /tmp 临时文件，不靠 funcstack 递归重入
-#   - 显示名由注册表提供，不再从函数名反推
-#   - 函数派发用 "$fn" 间接展开（zsh 的 nameref 不能派发函数，见计划 2.3）
+#   - 整轮 session 只查询一次，缓存在 _FC_ROWS，动作后从内存删行
+#   - 例外：单列且没有 mutating 动作的视图走流式，见 _fc_view_streamable
+#   - 不写 /tmp 临时文件
+#   - 函数派发用 "$fn" 间接展开（zsh 的 nameref 不能派发函数）
 #
-# pathf 与 envf 不走这里：它们不是包管理器，没有 view / action 的概念，
-# 因此不进注册表，连表格排版都跟着搬进了 collections/fzf-other.zsh。
-# =============================================================================
+# pathf 与 envf 不走这里：它们不是包管理器，没有 view / action 的概念。
 
-# -g 是刻意的：若本文件被从函数里 source，普通 typeset 会把 _FC_REG 变成局部变量，
-# 函数返回后下标 ${_FC_REG[eco:view]} 会被当成算术下标求值，
-# 报出 "bad math expression: ':' without '?'" 这种完全无法定位的错误。
+# -g 是刻意的：本文件被从函数里 source 时，普通 typeset 会把 _FC_REG 变成局部
+# 变量，函数返回后下标里的 ':' 会被当成算术求值，报 "bad math expression"。
 #
-# 全仓库**只有这一处**声明 _FC_REG。原先每个 collection 里还有一行
-# `[[ ${(t)PKG} == association ]] || typeset -gA PKG`，七份同样的守卫，
-# 理由是「万一用户 .zshrc 里有个同名的 PKG」。改名成 _FC_REG 之后这个理由
-# 不成立了，而「单独 source 一个 collection」本来就不是支持的用法 ——
-# 每个文件的头部都写着它由 fzf-collection.plugin.zsh 加载。
-# 同理删除的还有 _pkg_ready()：它的唯一职责就是诊断上面那个抢名字的情况。
+# 全仓库只有这一处声明 _FC_REG：collection 假定由本文件的加载路径先声明过。
 typeset -gA _FC_REG         # 注册表：_FC_REG[<eco>[:<view>]][:<field>] = value
 typeset -ga _FC_ROWS    # 当前 session 的列表，由 _fc_session 独占
 typeset -ga _FC_FIELDS # _fc_split_row 的输出
@@ -246,23 +165,14 @@ typeset -gi _FC_STREAM # 1 = 当前 view 走流式路径（_fc_feed 用），见
 
 # 当前画面的标题，由 _fc_cmd / _fc_session 设，_fc_fzf_read 读。
 #
-# 它是全局而不是参数，而且**请不要再把它改成参数**：这一层之下要读标题的
-# 有三处 —— 动作子菜单、rollback 的版本选择器、view 菜单 —— 它们各自距
-# _fc_session 两三层调用，而中间还夹着动作派发：_fc_apply -> _fc_act ->
-# handler。把标题穿过去意味着 5 个签名各自多一个参数、并且多数 handler 并不
-# 关心它。它是货真价实的 session 状态，_FC_ROWS 也是。
-#
-# 它以前叫 `header`，不带前缀，于是覆盖了用户 .zshrc 里的同名变量，跑完还
-# 留一个脏值在全局。现在这个名字属于插件，撞不掉了。
+# 全局而不是参数，**请不要再改成参数**：读标题的有三处（动作子菜单、rollback
+# 的版本选择器、view 菜单），都隔着动作派发 _fc_apply -> _fc_act -> handler，
+# 穿过去要让 5 个签名都多个参数，而多数 handler 并不关心它。
 typeset -g _FC_HEADER=''
 
-# 注册表读取。key 必须在变量里拼好再用于下标。
-#
-# 绝对不要写 ${_FC_REG[$eco:title]} —— zsh 会把 ':' 后的首字母当成参数修饰符：
-#   :h head  :t tail  :r root  :e extension  :s suffix  :l lower  :u upper
-# 于是 $eco:title 里的 ':t' 被解释成 tail，返回空字符串且没有任何报错。
-# 受影响的字段名（本项目全部踩过）：title / stay / fallback / homepage /
-# rollback / search / tap。views / info / install 只是恰好没撞上。
+# 注册表读取。key 必须在变量里拼好再当下标：${_FC_REG[$eco:title]} 会让 zsh
+# 把 ':t' 当成 tail 修饰符，静默返回空。踩过的是 title / stay / fallback /
+# homepage / rollback / search / tap。
 _fc_reg_get() {
   local key=$1 part
   shift
@@ -270,40 +180,29 @@ _fc_reg_get() {
   [[ -n ${_FC_REG[$key]:-} ]] && print -r -- "${_FC_REG[$key]}"
 }
 
-# 读 view 级字段：_FC_REG[<eco>:<view>:<field>]。
-#
-# 单独拆一个函数，是因为 key 的分段顺序只有一处能写对。注册表约定是
-# eco:view:field，而 _fc_reg_get 是「eco 后面接什么就是什么」，于是
-# _fc_reg_get eco actions view 会拼出 eco:actions:view —— 读不到任何东西，
-# 而且**不报错**，只是静默返回空。动作清单一空，回车就没有子菜单可弹，
-# 表现为「选中了却什么都没发生」。所以顺序必须封在这个函数的参数里。
+# 读 view 级字段 _FC_REG[<eco>:<view>:<field>]。单独拆一个函数是为了把分段
+# 顺序封在一处：_fc_reg_get 是「eco 后面接什么就是什么」，用它读 view 字段会
+# 拼出 eco:actions:view，静默返回空，回车就没有子菜单可弹。
 _fc_reg_view_get() {           # $1=eco $2=view $3=field
   local key=$1
   key="${key}:${2}:${3}"
   [[ -n ${_FC_REG[$key]:-} ]] && print -r -- "${_FC_REG[$key]}"
 }
 
-# fzf 读取。全仓库唯一调用 fzf 的地方。退出码透传，调用方靠它区分
-# 「选中」与「取消」（旧驱动的 B11）。
+# fzf 读取。全仓库唯一调用 fzf 的地方。退出码透传，调用方靠它区分选中与取消。
 #
-# 三个选项在这里、且只能在这里给：
-#   --tabstop=1  本驱动的行约定是「tab = 列分隔符，渲染成恰好 1 个空格」，
-#                列对齐由 _fc_render 补空格完成，不交给 tab stop
-#   --ansi       候选行里带 SGR 序列（调色板着色的那一层）。不给的话 fzf
-#                把 \e[34m 当 5 个普通字符：既不上色，还把这 5+4 个字节算进
-#                显示宽度，于是长行被提前截断
-#   --header     从 _FC_HEADER 取，见那里为什么是全局
-#
-# 以前 pathf / envf 绕过这个函数直接调 fzf，自己带一份 --ansi 和 --header。
-# 那意味着「必须带 --ansi」这条约束有两处实现，而 tests 里那道检查是
-# grep 源码里 `| fzf "` 的行数 —— 删掉那两处直接调用，grep 数到 0，0 == 0，
-# 门就通过了。现在统一到这里。
+# 三个选项只能在这里给：
+#   --tabstop=1  行约定是「tab = 列分隔符，渲染成恰好 1 个空格」，列对齐由
+#                _fc_render 补空格完成，不交给 tab stop
+#   --ansi       候选行带 SGR 序列。不给的话 fzf 把 \e[34m 当 5 个普通字符，
+#                既不上色，还把这 5+4 个字节算进显示宽度，长行于是被提前截断
+#   --header     取自 _FC_HEADER
 _fc_fzf_read() {
   fzf "${_FC_OPTS[@]}" --tabstop=1 --ansi \
     --header "$(_fc_rule "$_FC_HEADER")" "$@"
 }
 
-# 按 tab 切分一行。不能用 ${(ps:\t:)var} —— flag 参数不接受 $'\t'（见计划 2.3）。
+# 按 tab 切分一行。不能用 ${(ps:\t:)var}：flag 参数不接受 $'\t'。
 _fc_split_row() {        # $1=line -> _FC_FIELDS
   local rest=$1
   _FC_FIELDS=()
@@ -315,31 +214,26 @@ _fc_split_row() {        # $1=line -> _FC_FIELDS
   done
 }
 
-# 展示层：把 _FC_ROWS（干净的 name<TAB>f2<TAB>... ）渲染成对齐且逐列着色的 fzf 行。
+# 展示层：把 _FC_ROWS（干净的 name<TAB>f2<TAB>...）渲染成对齐且逐列着色的行。
 #
-# 列数与配色由注册表 <eco>:<view>:cols 给出，**空格分隔**，每列一个 spec。
-# spec 是调色板里的角色名（见 _FC_SGR），值写错了由 _fc_sgr_prefix 降级并告警：
-#   'name have sep want'  name | 蓝 | 无 | 黄   即 outdated 的四列双色
-#   'name have'           name | 蓝             即 manage 的两列
-#   'name'                单列                   即 search
+# 列数与配色取自 <eco>:<view>:cols，空格分隔，每列一个角色名：
+#   'name have sep want'   outdated 的四列
+#   'name have'            manage 的两列
+#   'name'                 单列，即 search
 # 未声明 cols 时按单列处理。
-# 数字写法（'0,34,0,33'）仍然认，那是旧声明的兼容路径，见 _fc_sgr_prefix。
 #
-# 每列各自补齐到本列最大宽度，末列不补（避免尾随空白）。
-# 输出的行结构是  name<TAB><补齐><TAB>f2<TAB>f3...
-# 补齐单独占一个 tab 段，因此 ${line%%$'\t'*} 取到的 name 天然干净。
-# 配合 --tabstop=1（tab 渲染成 1 个空格）得到旧版 column -t 的对齐效果。
+# 每列补齐到本列最大宽度，末列不补（避免尾随空白）。补齐单独占一个 tab 段，
+# 所以 ${line%%$'\t'*} 取到的 name 天然干净；配合 --tabstop=1 得到 column -t
+# 的对齐效果。
 _fc_render() {           # $1=eco $2=view
   local eco=$1 view=$2
   local line cell seg out k first w
   local -a cols widths flds segs
   local -a pre post
   local i nf n
-  # 所有 local 都必须写在函数开头，绝不能写进循环体。
-  # 回归点：zsh 5.9 在循环体内执行标量 local 时，会往 stdout 打一行
-  # `NAME=<上一轮的值>`（含 ESC 的值显示成 $'\C-...'）。本函数的 stdout
-  # 直接喂给 fzf，那一行会变成一条假候选（曾经表现为列表里出现 k=6）。
-  # 写对位置的话 _fc_render 输出的每一行都以包名开头。
+  # 所有 local 都写在函数开头，绝不能写进循环体：zsh 5.9 在循环体内执行标量
+  # local 会往 stdout 打一行 `NAME=<值>`，而本函数的 stdout 直接喂给 fzf，
+  # 那一行会变成一条假候选。
   local -i csep=${_FC_COLUMN_GAP:-5}
 
   n=${#_FC_ROWS}
@@ -349,11 +243,8 @@ _fc_render() {           # $1=eco $2=view
   nf=$#cols
   (( nf )) || { cols=(name); nf=1 }
 
-  # 逐列的着色前后缀在这里一次解析好，循环内只做字符串拼接。
-  #
-  # 不能在循环里调 _fc_sgr_paint：命令替换每格一次 fork，2 万行 × 4 列实测 51s，
-  # 而直接拼 $'\e['… 是 0.33s，预解析是 0.28s。这也是 _fc_sgr_paint 只许在入口层
-  # 用的原因。
+  # 逐列的着色前后缀在这里一次解析好，循环内只做字符串拼接：每格调一次
+  # _fc_sgr_paint 是每格一次 fork，实测 51s 对 0.28s。
   #
   # 宽度的预扫描仍然在补齐之后、着色之前 —— 色码不进 ${#cell}，
   # 所以对齐与配色互不干扰。
@@ -430,49 +321,30 @@ _fc_render() {           # $1=eco $2=view
       first=0
       out+="$seg"
     done
-    # 末尾不加 tab。补齐段可能为空，会留下连续 tab —— 渲染成连续空格，
-    # 正是需要的列间隔
+    # 末尾不加 tab。补齐段为空时会留下连续 tab，渲染成连续空格，正是列间隔。
     print -r -- "$out"
   done
 }
 
-# 收集查询结果。_FC_ROWS 里是干净的 name<TAB>rest，不含颜色与对齐空格。
+# 收集查询结果到 _FC_ROWS（干净的 name<TAB>rest，不含颜色与对齐空格）。
 #
-# 必须一次 slurp 完再按行切，不能用 while-read + arr+=()：
-# zsh 的数组 append 每次都要重新分配整个数组，于是这一段是 O(n^2)。
-# 实测 8 万行 172s、44 万行（取一半）45s，翻一倍就是 4 倍。
-# npm / pnpm 的 search 有 448 万行（all-the-package-names），
-# 照 while-read 写要一个多小时才把第一批候选交给 fzf —— 表现就是「一直不出候选」。
-#
-# ${(@f)$(cat)} 是一次 fork + 一次批量切分，80 万行 0.4s。
-# 代价是整份列表会短暂以单个字符串的形式驻留；只有走缓冲路径的视图会到这里，
-# 它们的行数都在几百到几千（outdated / manage / pinned / gem、pip 的 search）。
+# 必须一次 slurp 再按行切：zsh 的 arr+=() 每次都重新分配整个数组，while-read
+# 写就是 O(n^2)（实测 8 万行 172s）。${(@f)$(cat)} 是 80 万行 0.4s。代价是整份
+# 列表短暂以单个字符串驻留，只有走缓冲路径的视图会到这里，行数都在几千量级。
 _fc_load_rows() {
   local -a lines
   lines=("${(@f)$(cat)}")
-  # 命令替换会吃掉尾部换行，按行切完末尾可能多出一个空元素。
-  # ${(@)arr:#} 用空模式删掉所有空串，等价于原来的 [[ -z $line ]] && continue。
+  # 命令替换吃掉尾部换行，切完末尾可能多出一个空元素；${(@)arr:#} 删掉所有空串。
   _FC_ROWS=("${(@)lines:#}")
 }
 
-# 该视图能不能走流式路径（不落 _FC_ROWS，直接把查询结果管道给 fzf）。
+# 该视图能否走流式路径（不落 _FC_ROWS，直接把查询结果管道给 fzf）。两个条件：
+#   1. cols 只声明一列。单列时 _fc_render 的净效果就是「取首字段」，整层可退化成
+#      cut -f1。
+#   2. 没有 mutating 动作 —— 没有删行，_FC_ROWS 就无存在理由。
 #
-# 两个条件都要满足：
-#   1. cols 只声明一列。单列视图里 _fc_render 的净效果就是「取首字段」——
-#      首列原样输出、不补齐、不上色，于是整层可以退化成 cut -f1。
-#   2. 视图的动作里没有一个是 mutating。没有 mutating 就没有删行，
-#      _FC_ROWS 也就没有存在理由。
-#
-# 满足时 _fc_feed 的候选链是
-#     _fc_reg_query | cut -f1 | grep -v '^$' | fzf
-# 语义与缓冲路径一致（取首字段 + 丢空行），但 zsh 一行都不碰。
-# npm / pnpm 的 search（448 万行）走的正是这条：all-the-package-names 本身 0.7s，
-# cut + grep 加起来不到 0.2s，fzf 立刻开始出候选 —— 与重构前 _fzf_search 的
-# `$available | fzf` 一样。重构后两个 search 视图都被判成不可流式，
-# 于是掉进 O(n^2) 的缓冲路径，这就是「以前秒开、现在一直不出来」的原因。
-#
-# 代价：每次回到列表都要重查一次（0.7s）。旧驱动用 /tmp 缓存文件避开这一下，
-# 那是本驱动刻意去掉的机制，这里不捡回来。
+# 满足时候选链是 _fc_reg_query | cut -f1 | grep -v '^$' | fzf，语义与缓冲路径
+# 一致但 zsh 一行都不碰。代价是每次回到列表都要重查一次（0.7s）。
 _fc_view_streamable() {        # $1=eco $2=view -> 返回 0 表示可流式
   local eco=$1 view=$2 a m
   local -a acts muts cols
@@ -499,25 +371,22 @@ _fc_feed() {
   if (( _FC_STREAM )); then
     _fc_reg_query "$eco" "$view" | cut -f1 | grep -v '^$' | _fc_fzf_read "$@"
   else
-    # 列表被清空时（最后一轮 mutating 全删完）不能让 print 打出一个空行 ——
-    # 那会变成一条空白候选，让用户能选中它。直接不发任何行，fzf 立刻退出，
-    # 与 _fc_render 在空表时 return 0 的效果一致。
+    # 列表被清空时不能打出一个空行：那会变成一条能选中的空白候选。
     if (( ${#_FC_ROWS} )); then
       print -rl -- "${_FC_ROWS[@]}" | _fc_render "$eco" "$view" | _fc_fzf_read "$@"
     fi
   fi
 }
 
-# 调用注册表里登记的查询函数。缓冲路径整个 session 只调一次；
-# 流式路径每次渲染列表都调一次（见 _fc_view_streamable 的代价说明）。
+# 调用注册表登记的查询函数。缓冲路径整个 session 一次，流式路径每次渲染一次。
 _fc_reg_query() {
   local fn
   fn=$(_fc_reg_get "$1" "$2") || return 1
   "$fn"
 }
 
-# 精确删除匹配的行。不能用 ${(@)rows:#pat}：它按 glob 匹配整个元素，
-# 而元素含 tab，且 flag 参数塞不进 $'\t'（计划 2.3）。
+# 精确删除匹配的行。不能用 ${(@)rows:#pat}：它按 glob 匹配整个元素，而元素含
+# tab，且 flag 参数塞不进 $'\t'。
 _fc_drop_row() {
   local name=$1 line
   local -a keep
@@ -529,8 +398,7 @@ _fc_drop_row() {
 
 # 动作派发完全由注册表决定，驱动里不出现任何具体动作名：
 #   _FC_REG[<eco>:<act>] 存在 -> 专用处理器，收一个包名参数
-#                       （rollback / info / deps / homepage / use / ...）
-#   否则               -> _FC_REG[<eco>:fallback] 原生透传，收 (act, 包名)
+#   否则                    -> _FC_REG[<eco>:fallback] 原生透传，收 (act, 包名)
 _fc_act() {               # $1=eco $2=view $3=act $4=name
   local act=$3 fn
   fn=$(_fc_reg_get "$1" "$act")
@@ -556,7 +424,6 @@ _fc_actions() {           # $1=eco $2=view
 }
 
 # 会把行移出列表的动作。view 级覆盖优先，缺了才回退到 eco 级。
-# 同样把解析拆出来，测试才能走真实路径而不是自己拼一遍 key。
 _fc_reg_view_mutating() {     # $1=eco $2=view -> _FC_MUTATING
   local -a m
   m=(${(s: :)$(_fc_reg_view_get "$1" "$2" mutating)})
@@ -566,10 +433,9 @@ _fc_reg_view_mutating() {     # $1=eco $2=view -> _FC_MUTATING
 
 # 回滚到指定版本。versions 列表只在此处取一次，不随 session 缓存。
 #
-# 三个数据键刻意不叫 versions / current / install：_fc_act 用 _FC_REG[<eco>:<动作名>]
-# 查专用处理函数，而 install 正是 search 视图的合法动作名。叫 install 的话，
-# 用户选「install」会命中回滚用的安装器，而且只收到包名一个参数。
-# 三个都写成「动词-名词」，于是 install-version 不会和动作名 install 相撞。
+# 三个数据键刻意不叫 versions / current / install：install 是 search 视图的
+# 合法动作名，而 _fc_act 用 _FC_REG[<eco>:<动作名>] 查专用处理函数，叫 install
+# 的话用户选「install」会命中回滚用的安装器。写成动词-名词就不撞。
 _fc_rollback() {          # $1=eco $2=pkg
   local eco=$1 pkg=$2 versions old new fn
   fn=$(_fc_reg_get "$eco" list-versions) || return 1
@@ -584,22 +450,15 @@ _fc_rollback() {          # $1=eco $2=pkg
     _fc_msg "Rollback cancel." "$pkg" && return 0
   fi
   [[ $new == "$old" ]] && { print -n $'\nREINSTALL THE SAME VERSION after 2 seconds\n'; sleep 2 }
-  # 第 3 个参数是回滚前的版本。多数 ecosystem 用不到（直接装新版本即可），
-  # 但 gem 需要先按旧版本定位安装目录并卸载，所以传过去。
-  # 已有的 handler 只用 $1 $2，多传一个参数不影响。
+  # 第 3 个参数是回滚前的版本：多数 ecosystem 用不到，gem 要靠它先卸载。
+  # 已有的 handler 只用 $1 $2，多传不影响。
   "$(_fc_reg_get "$eco" install-version)" "$pkg" "$new" "$old"
 }
 
 # 对选中的一批包执行一个动作。
 #
-# 回归点（B9）：旧驱动写成 `gem uninstall ... && _fzf_tmp_shift "$f"`，循环里
-# 不看退出码 —— 一个包失败也继续跑完剩下的，而且失败的那个照样被移出列表，
-# 于是它从屏幕上消失了，但系统里还在，再也找不到。用户只能重查一次才知道。
-#
-# $4=1 表示这是 mutating 动作，此时遇到失败立刻停止（返回 1）；
-# 只读动作传 0 —— 失败不停止，因为只读动作没有改变任何状态，
-# 中止没有意义，「失败」也往往只是「没有结果」（例如 brew uses 查不到依赖）。
-#
+# $4=1 表示 mutating 动作，遇到失败立刻停止（返回 1）。只读动作传 0：它没有改变
+# 任何状态，中止没有意义，「失败」往往只是「没有结果」（例如 brew uses 查不到依赖）。
 # 结果放进 _FC_DONE / _FC_FAILED，由 _fc_session 决定要不要删行。
 _fc_apply() {           # $1=eco $2=view $3=act $4=mutating?
   local eco=$1 view=$2 act=$3 strict=$4 p name
@@ -607,8 +466,7 @@ _fc_apply() {           # $1=eco $2=view $3=act $4=mutating?
   _FC_FAILED=()
   _FC_RC=0
   for p in "${(@f)_FC_PICKED}"; do
-    # ${p%%$'\t'*} 取到的就是干净 name —— _fc_render 把对齐填充放在
-    # 第一个 tab 之后，所以这里不需要额外剥空格
+    # _fc_render 把对齐填充放在第一个 tab 之后，所以这里取到的 name 天然干净
     name=${p%%$'\t'*}
     if _fc_act "$eco" "$view" "$act" "$name"; then
       _FC_DONE+=("$name")
@@ -623,12 +481,11 @@ _fc_apply() {           # $1=eco $2=view $3=act $4=mutating?
   return 0
 }
 
-# 动作失败后的汇总。写清楚哪一项失败、后面的没做、成功几项，
-# 这样用户知道列表里剩下的东西是什么状态。
+# 动作失败后的汇总：哪一项失败、后面的没做、成功几项。
 _fc_report() {          # $1=act
   print -r -- ""
-  # 130 = 128 + SIGINT。下载 formulae 时 Ctrl-C 是很常见的操作，
-  # 说成「失败」会让用户以为包坏了，而实际上什么都没变。
+  # 130 = 128 + SIGINT：下载 formulae 时 Ctrl-C 很常见，说成「失败」会让用户
+  # 以为包坏了，而实际上什么都没变。
   if (( _FC_RC == 130 )); then
     print -r -- "  ${_FC_FAILED[1]}: 动作 '$1' 被 Ctrl-C 中断，已停止"
   else
@@ -638,8 +495,8 @@ _fc_report() {          # $1=act
   print -r -- "  其余 ${_FC_PENDING} 项未执行，仍在列表里"
 }
 
-# view 循环：缓冲路径整轮 session 只查询一次，动作后从内存删行，不重查、不落盘；
-# 流式路径（_fc_view_streamable）每次回到列表重查，但从不把列表读进 zsh。
+# view 循环：缓冲路径整轮 session 只查询一次，动作后从内存删行，不重查不落盘；
+# 流式路径每次回到列表重查，但从不把列表读进 zsh。
 _fc_session() {           # $1=eco $2=view
   local eco=$1 view=$2 sel act p
   local -i strict
@@ -657,8 +514,7 @@ _fc_session() {           # $1=eco $2=view
   _FC_STREAM=0
   if _fc_view_streamable "$eco" "$view"; then
     _FC_STREAM=1
-    # 清掉上一个 view 可能留下的行。流式路径不读它，但 _FC_ROWS 是全局的，
-    # 留着上一批数据只会让人误以为本视图也缓冲过。
+    # 清掉上一批数据：_FC_ROWS 是全局的，留着会让人误以为本视图也缓冲过。
     _FC_ROWS=()
   else
     _fc_reg_query "$eco" "$view" | _fc_load_rows
@@ -668,18 +524,16 @@ _fc_session() {           # $1=eco $2=view
   fi
 
   while :; do
-    # 必须把列表管道给 fzf。漏掉这一步 fzf 会去读终端，
-    # 把用户输入当成候选列表（表现为列出了完全无关的内容）。
+    # 必须把列表管道给 fzf，否则 fzf 会去读终端，把用户输入当成候选列表。
     sel=$(_fc_feed "$eco" "$view" --multi $opt) || break
     [[ -n $sel ]] || break
-    # 必须用 ${(f)sel} 或 "${(@f)sel}"。写成 ${(f)"$sel"}（带引号的展开配 (f) flag）
-    # 是非法语法，且只在运行时才报 bad substitution —— zsh -n 检查不出来。
+    # 必须用 ${(f)sel} 或 "${(@f)sel}"：${(f)"$sel"} 是非法语法，且只在运行时
+    # 才报 bad substitution，zsh -n 检查不出来。
     picked=("${(@f)sel}")
     (( ${#picked} )) || continue
     _FC_PICKED=("${picked[@]}")
 
-    # 内层：动作菜单。非 mutating 且在 stay 列表中的动作会留在原地,
-    # 沿用旧驱动「同一选择可连续执行多个只读动作」的行为。
+    # 内层：动作菜单。stay 里的动作执行完留在原地，可连续执行多个只读动作。
     while :; do
       act=$(_fc_actions "$eco" "$view") || break
       [[ -n $act ]] || break
@@ -697,8 +551,8 @@ _fc_session() {           # $1=eco $2=view
         continue
       fi
 
-      # 只有 mutating 动作会走到这里。成功的那几个已经生效，必须移出列表，
-      # 否则用户会以为它们还在；失败项与未执行项保持原样，可直接重试。
+      # 只有 mutating 动作会走到这里。已生效的必须移出列表，否则用户会以为还在；
+      # 失败项与未执行项保持原样，可直接重试。
       for p in "${_FC_DONE[@]}"; do _fc_drop_row "$p"; done
       _FC_PENDING=$(( ${#_FC_PICKED} - ${#_FC_DONE} - ${#_FC_FAILED} ))
       _fc_report "$act"

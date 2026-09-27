@@ -1,8 +1,5 @@
 #!/usr/bin/env zsh
-# 上面这行是文件元数据（供编辑器与格式化工具识别），不是解释器指令。
-# 本文件是库文件，由 fzf-collection.plugin.zsh 以 source 方式加载。
-# 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
-# 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
+# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
 
 # https://docs.npmjs.com/cli/v8/using-npm/config#shorthands-and-other-cli-niceties
 
@@ -26,15 +23,14 @@ _npmf_list_available() {
   all-the-package-names
 }
 
-# ---- 版本相关：全部显式收参，不再读调用者作用域 ----
+# ---- 版本相关：全部显式收参 ----
 
 _npmf_version_list() {
   npm info "$1" versions --json 2>/dev/null | jq -r 'reverse | .[]' 2>/dev/null
 }
 
-# `npm list --depth 0` 每行是 `pkg@version`，取自己那个 pkg 的版本。
-# 原来用 perl 的 \Q$pkg\E@ 锚定；zsh 里用同样的字面匹配，
-# 整行含 $pkg@ 才会命中，所以别的包的行不会被误取。
+# `npm list --depth 0` 每行是 `pkg@version`；整行含 `pkg@` 才命中，所以别的包
+# 的行不会被误取。
 _npmf_version_current() {
   local line
   _npmf list --depth 0 2>/dev/null | while IFS= read -r line; do
@@ -51,7 +47,7 @@ _npmf_version_install() {
 
 # ---- 动作适配器 ----
 
-_npmf_act() {              # 原生透传，保留旧驱动 update 前的提示
+_npmf_act() {              # 原生透传；update 之前先打一行提示
   [[ $1 == update ]] && print -r -- "upgrade $2"
   _npmf "$1" "$2"
 }

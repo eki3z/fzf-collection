@@ -1,27 +1,21 @@
-# 行为基线测试用例
+# 行为基线测试用例。
 #
-# 本文件会被三个 shell 分别 source：bash 3.2 / bash 5.3 / zsh 5.9
-# 因此这里的每一行语法都必须同时在三者下成立 —— 任何分歧都说明
-# body 尚未满足「纯 bash 语法、实际由 zsh 解析」这个约束。
+# 本文件会被 bash 3.2 / bash 5.3 / zsh 5.9 分别 source，每一行语法必须在三者下
+# 都成立。只覆盖确定性、无副作用的纯函数；不覆盖 _fc_pager（起 less）、
+# _fc_homepage（开浏览器）与 _fc_cmd（要真 fzf 与真包管理器）。
 #
-# 用例只覆盖确定性、无副作用的纯函数。
-# 不覆盖：_fc_pager(起 less)、_fc_homepage(开浏览器)、
-#        _fc_cmd(要真 fzf 与真包管理器)
-#
-# 已删除的用例：t_case_header。它调用 _fzf_header —— 一个在 P1 换注册表驱动时
-# 就删掉的函数。于是它每次打印 "command not found: _fzf_header"，而基线把那
-# 两行录成了预期输出。三个门都曾这样"稳定地错"：_fzf_opts 被前一个用例清空、
-# $root 没导出、以及这一条调用一个不存在的函数。基线只记录文本，分不出
-# 「正确」与「每次都一样地错」。
+# **基线只记录文本，分不出「正确」与「每次都一样地错」。** 本仓库已经因此错过
+# 三道门：_fzf_opts 被前一个用例清空、$root 没导出、以及一条用例调用了已被
+# 删除的函数而把 command not found 录成预期。写新用例时先想一遍：它失败时会
+# 打印什么，那行字在 baseline 里会被当成正确还是错误。
 
 # 用例之间的分隔标记，便于 diff 定位
 t_sep() {
   printf '\n===== %s =====\n' "$1"
 }
 
-# 1. _fc_rule：header 下划线，长度应等于字符串长度
-#    已知问题：base.sh:43 的 {1..$#1} 在 bash 下只输出 1 个字符
-#    （bash 的 brace expansion 先于参数展开，{1..$#1} 被当作字面量）
+# 1. _fc_rule：header 下划线，长度应等于字符串长度。
+#    注意 {1..$#1} 在 bash 下只输出 1 个字符：brace expansion 先于参数展开。
 t_case_rule() {
   local s
   for s in "Header Text" "abc" "Find Path" "Env" "Npm Outdated"; do
@@ -31,11 +25,7 @@ t_case_rule() {
   done
 }
 
-# 2. _other_format：把 name<TAB>rest 渲染成对齐且着色的行
-#    原来这个函数叫 _fzf_format、住在 base.zsh、带一个 $format 参数，参数只
-#    允许 general 一个值，另外三个分支（manage / pinned / outdated）早在迁移
-#    到注册表驱动时就无法到达了。于是「format=manage 会报错」成了一条常设用例，
-#    测的是一个已经不存在的机制。现在没有参数、没有分支、没有那条用例。
+# 2. _other_format：把 name<TAB>rest 渲染成对齐且着色的行。
 t_case_format() {
   t_sep "基本：首字段对齐，其余合并成一段并染蓝"
   printf 'lodash\t4.17.21\tsome description here\nreact\t18.2.0\tdesc\n' \
@@ -47,13 +37,9 @@ t_case_format() {
   print -r -- "  (以上应为空)"
 }
 
-# 3. _fc_fzf_read：fzf 非交互模式（--filter）与退出码透传
-#    这一条原本测的是 _fzf_read（缺陷 B1 / B11）。ffp 移除后 _fzf_read
-#    零调用者，已随之删除，但它承载的 B11 知识不能丢：
-#      旧 _fzf_read 结尾是 `fzf | perl`，perl 恒返回 0，于是它永远返回 0，
-#      调用方无法区分「用户选中」与「用户取消」。
-#    _fc_fzf_read 不管道任何东西，直接透传 $?，所以 B11 在这里已修。
-#    保留这个用例是为了让「退出码必须透传」不再退化 —— 调用方靠它 break 循环。
+# 3. _fc_fzf_read：fzf 非交互模式（--filter）与退出码透传。
+#    退出码必须透传，调用方靠它区分「选中」与「取消」并 break 循环。
+#    尾部接任何管道都会吞掉它（管道最后一环的退出码才是 $?）。
 t_case_read() {
   _FC_OPTS=()
   _FC_HEADER="Test"
@@ -64,16 +50,14 @@ t_case_read() {
   printf 'alpha\nbeta\n' | fzf --filter=alp >/dev/null
   print -r -- "  fzf 裸调用  退出码=$?   ← 两者必须一致"
 
-  t_sep "退出码：无匹配时必须透传 fzf 的 1（缺陷 B11 的回归点）"
+  t_sep "退出码：无匹配时必须透传 fzf 的 1"
   printf 'alpha\nbeta\n' | _fc_fzf_read --filter=zzzz >/dev/null
   print -r -- "  _fc_fzf_read 退出码=$?   ← 必须是 1，不能恒为 0"
   printf 'alpha\nbeta\n' | fzf --filter=zzzz >/dev/null
   print -r -- "  fzf 裸调用  退出码=$?"
 }
 
-# 4. _fc_msg：消息输出格式
-#    标签必须显式传。原来回退到 $caller —— 那是旧驱动的自由变量，
-#    旧驱动删掉后无人赋值，单参调用会打出一个空标签。
+# 4. _fc_msg：消息输出格式。标签必须显式传，单参调用会打出空标签。
 t_case_msg() {
   t_sep "有 pkg"
   _fc_msg "some message" "mypkg"
@@ -140,9 +124,8 @@ t_case_render() {
   _fc_render >/dev/null
   printf '  [%s]\n' "${(j:,:)${_FC_ROWS}}"
 
-  # 字符级断言：显示行里绝不能出现字面的反斜杠。
-  # 回归点：曾用 ${(j:\t:)segs} 拼行，而 flag 参数是字面量、不解释转义，
-  # 于是输出全是字面 \t。基线只「记录现状」，抓不到这类 bug，必须显式断言。
+  # 字符级断言：显示行里绝不能出现字面的反斜杠。${(j:\t:)segs} 的 flag 参数
+  # 是字面量、不解释转义，输出会全是字面 \t；基线只记录现状，抓不到这类 bug。
   t_sep "字符级断言：不得出现字面反斜杠"
   _FC_ROWS=("a	1" "bb	2")
   out=$(_fc_render)
@@ -153,10 +136,9 @@ t_case_render() {
   fi
   [[ $out == *$'\t'* ]] && print -r -- '  含真 tab: yes' || print -r -- '  含真 tab: no'
 
-  # 对齐断言：所有行的每一个数据列都必须起始于同一列。
-  # 回归点：曾写成 for seg in $segs（未加引号），zsh 会丢弃空元素，
-  # 而补齐段在最长的那行恰好为空 —— 那一行就少一个 tab、整行左移。
-  # 列间的 tab 数（_FC_COLUMN_GAP，默认 5）不固定，所以只比较数据列本身。
+  # 对齐断言：每个数据列都必须起始于同一列。数组展开必须加引号，否则 zsh 丢弃
+  # 空元素，而补齐段在最长的那行恰好为空 —— 那一行会少一个 tab、整行左移。
+  # 列间的 tab 数不固定，所以只比较数据列本身。
   t_sep "对齐断言：各数据列起始位置必须一致"
   _FC_REG+=('al:manage:cols' 'name have sep want')
   _FC_ROWS=("a	1	=>	1"
@@ -183,11 +165,9 @@ t_case_render() {
   (( ${#ref} == 3 )) && print -r -- '  OK 各行数据列起始一致'
   unset '_FC_REG[al:manage:cols]'
 
-  # 纯度断言：显示层每行必须以包名开头。
-  # 回归点：zsh 5.9 在循环体内执行标量 local 时，会往 stdout 打一行
-  # `NAME=<上一轮的值>`。本函数的 stdout 直接喂给 fzf，那一行会变成一条
-  # 假候选（曾经表现为 pnpmf 列表里混进 k=6 / k=''）。zsh -n 查不出，
-  # tests/run.sh --local 那道静态门负责在写入时拦住，这里负责兜住症状。
+  # 纯度断言：每行必须以包名开头。zsh 5.9 在循环体内执行标量 local 会往 stdout
+  # 打一行 `NAME=<值>`，而本函数的 stdout 直接喂给 fzf，那一行会变成假候选。
+  # zsh -n 查不出，tests/run.sh --hygiene 那道静态门在写入时拦，这里兜住症状。
   t_sep "纯度断言：每行必须以包名开头（无 NAME= 污染、无前导 tab）"
   _FC_ROWS=("a	1	=>	1"
              "much-longer-name	22	=>	22"
@@ -208,8 +188,8 @@ t_case_render() {
   unset '_FC_REG[al:manage:cols]'
 }
 
-# 9. _fc_drop_row：从 _FC_ROWS 精确删除匹配的行
-#    对照 ${(@)rows:#pat} 的 glob 误伤 —— 这是必须用 while + [[ == ]] 的原因
+# 9. _fc_drop_row：从 _FC_ROWS 精确删除匹配的行。
+#    不能用 ${(@)rows:#pat}：它按 glob 匹配整个元素，元素里的 * ? [ 会被当模式。
 t_case_drop_row() {
   t_sep "删除存在的行"
   _FC_ROWS=("alpha	1" "beta	2" "gamma	3")
@@ -243,10 +223,9 @@ t_case_membership() {
   done
 }
 
-# 11. _fc_reg_get：注册表读取
-#     关键回归点 —— 绝不能写 ${_FC_REG[$var:field]}，zsh 会把 ':' 后的首字母
-#     当成参数修饰符（:t tail / :h head / :r root / :e ext / :s suffix
-#     / :l lower / :u upper），于是静默返回空。下面的字段名全部踩过这个坑。
+# 11. _fc_reg_get：注册表读取。绝不能写 ${_FC_REG[$var:field]}：zsh 会把 ':' 后
+#     的首字母当成参数修饰符（:t tail / :h head / :r root / :e ext / :s suffix
+#     / :l lower / :u upper）而静默返回空。下面的字段名全部踩过这个坑。
 t_case_reg_get() {
   t_sep "首字母撞上修饰符的字段（这些曾全部静默返回空）"
   local f v
@@ -273,10 +252,8 @@ t_case_reg_get() {
   printf '  key=%s 后 T[$key] = [%s]  ← 正确做法\n' "$key" "${T[$key]}"
 }
 
-# 12. 多 ecosystem 注册表共存
-#     回归点：zsh 关联数组的 _FC_REG=(...) 是【整体替换】而非合并，
-#     后 source 的 collection 会把先前的条目全部擦掉。
-#     必须写 _FC_REG+=(...)。此用例随每个 collection 迁移而增长。
+# 12. 多 ecosystem 注册表共存。关联数组的 _FC_REG=(...) 是**整体替换**，
+#     所以 collection 必须写 _FC_REG+=(...)，否则后 source 的会擦掉先前的。
 t_case_coexist() {
   local eco
   t_sep "已迁移的 ecosystem 都应留在注册表里"
@@ -294,18 +271,16 @@ t_case_coexist() {
   printf '  改用 T+=([y:1])               -> 条目数=%s  （3 = 正确合并）\n' "${#T}"
 }
 
-# 13. _fc_session 必须把列表管道给 fzf
-#     回归点：曾漏掉 `print -l -- "${_FC_ROWS[@]}" |`，于是 fzf 自己去读终端，
-#     把用户输入当成候选列表。这里用桩替换 _fc_fzf_read，捕获它从 stdin 读到的内容。
+# 13. _fc_session 必须把列表管道给 fzf。漏掉管道的话 fzf 会去读终端，把用户
+#     输入当成候选列表。用桩替换 _fc_fzf_read，捕获它从 stdin 读到的内容。
 t_case_session_stdin() {
   local line
   t_sep "fzf 从 stdin 读到的候选列表"
   functions[_t_read_orig]=$functions[_fc_fzf_read]
 
-  # 桩：原样打印从 stdin 读到的内容，然后模拟「用户取消」。
-  # 必须写 stderr —— _fc_fzf_read 是在 $(...) 的子 shell 里被调用的，
-  # 写 stdout 会被命令替换吞掉，两种情况的输出就完全一样，测不出差别。
-  # 收不到任何行时显式报错，这样「漏掉管道」才能被基线比对抓到。
+  # 桩：打印从 stdin 读到的内容，然后模拟「用户取消」。
+  # 必须写 stderr：_fc_fzf_read 在 $(...) 的子 shell 里被调用，写 stdout 会被
+  # 命令替换吞掉，两种情况输出一致就测不出差别。收不到行时显式报错。
   _fc_fzf_read() {
     local line
     local n=0
@@ -340,10 +315,8 @@ t_case_session_stdin() {
   done
 }
 
-# 14. 多选结果的切分
-#     回归点：曾写成 picked=(${(f)"$sel"})，那是非法语法 ——
-#     zsh -n 查不出来，只有真正选中之后才在运行时抛 bad substitution。
-#     正确写法是 "${(@f)sel}"（flag 不能与带引号的展开组合）。
+# 14. 多选结果的切分。必须写 "${(@f)sel}"：${(f)"$sel"} 是非法语法，zsh -n
+#     查不出来，只有真正选中之后才在运行时抛 bad substitution。
 t_case_pick_split() {
   local sel p
   local -a picked
@@ -362,20 +335,16 @@ gamma	3.0"
   printf '  n=%d name=[%s]\n' "${#picked[@]}" "${picked[1]%%$'\t'*}"
 }
 
-# 15. 注册表自洽：动作名不得与内部数据键相撞，派发结果必须存在
-#
-# 回归点：回滚用的安装器曾登记为 _FC_REG[<eco>:install]，而 install 正是
-# search 视图的合法动作名。_fc_act 用 _FC_REG[<eco>:<动作名>] 查专用处理
-# 函数，于是选「install」会命中回滚安装器，而且只收到包名一个参数 ——
-# npm / pip / gem 三个 search 视图全中，pnpm 用 add 才躲过去。
-# 症状要等真的去装一个包才暴露，所以这里静态拦住。
+# 15. 注册表自洽：动作名不得与内部数据键相撞，派发结果必须存在。
+#     撞车的后果是选某个动作会命中另一个动作的 handler，而症状要等真的去装
+#     一个包才暴露，所以静态拦。
 t_case_registry() {
   local key eco view act fn
   local -a ecos parts views acts k2 reserved providers
   local missing=0
 
-  # 数据键必须从 base.zsh 的 _fc_rollback 里推导，不能在这里抄一份。
-  # 抄一份的话把键名改回去，本用例就跟着变，永远「一致」。
+  # 数据键必须从 base.zsh 的 _fc_rollback 里推导，不能在这里抄一份，否则改回
+  # 键名时本用例会跟着变，永远「一致」。
   reserved=(${(f)"$(sed -n '/^_fc_rollback()/,/^}/p' base.zsh \
     | grep -o '_fc_reg_get "\$eco" [a-z][a-z-]*' | awk '{print $NF}')"})
   reserved=(${(u)reserved})
@@ -434,13 +403,9 @@ t_case_registry() {
   printf '  已登记的 ecosystem：%s\n' "${(j: :)ecos}"
 }
 
-# 16. 键的形状：_FC_REG[<eco>:<view>:<field>]，且驱动真的解析得到
-#
-# 回归点（用户实测报出）：brewf outdated 选中后回车没有子菜单。
-# 原因是 _fc_actions 把参数拼成了 _FC_REG[<eco>:actions:<view>]，
-# 而注册表登记的是 _FC_REG[<eco>:<view>:actions] —— 读不到任何值且**不报错**，
-# 只是静默返回空，于是动作清单为空，回车无事可做。
-# 同一次迁移里 mutating 用的是另一种顺序，两种顺序并存才让这种错有可能发生。
+# 16. 键的形状：_FC_REG[<eco>:<view>:<field>]，且驱动真的解析得到。
+#     形状写反（_FC_REG[<eco>:actions:<view>]）读不到值且**不报错**，症状是
+#     「回车没反应」，所以既查形状也走驱动的真实解析路径查非空。
 #
 # 这里既查形状（第二段必须是合法 view 名），也走驱动的真实解析路径查非空，
 # 两者都必要：形状对但调用点顺序错，只有后者能抓到。
@@ -465,9 +430,8 @@ t_case_keyshape() {
       (( ${#parts} == 3 )) || continue
       [[ ${parts[1]} == $eco ]] || continue
       view=${parts[2]}
-      # 判据必须是「这个 X 有没有自己的 title」，不能从现有键里反推 X 集合 ——
-      # 那样写等于把顺序写反的键也算进合法 view 名，永远通过。
-      # cargo:search 是个有 title 但不在 views 里的 view，本检查照样认可。
+      # 判据是「这个 X 有没有自己的 title」，不能从现有键反推 X 集合：那样写
+      # 等于把分段顺序写反的键也算成合法 view 名，永远通过。
       if [[ -z $(_fc_reg_view_get $eco $view title) ]]; then
         bad=1
         printf '  *** 错误：%s 无 title，不是合法 view（键 %s 的分段顺序反了）***\n' $view $key
@@ -509,16 +473,11 @@ t_case_keyshape() {
   (( bad )) || printf '  OK 覆盖全部生效'
 }
 
-# 17. 完整循环：列表 -> 回车 -> 子菜单 -> 执行
+# 17. 完整循环：列表 -> 回车 -> 子菜单 -> 执行。
+#     第 2 次 fzf 调用必须收到动作清单；收不到的症状是「回车没反应」。
 #
-# 回归点（用户实测报出）：brewf outdated 选中后回车没有子菜单。
-# 动作清单解析成了 _FC_REG[<eco>:actions:<view>]，而注册表是
-# _FC_REG[<eco>:<view>:actions] —— 读不到值且不报错，于是清单为空，
-# fzf 第二次被调用时收到 0 个候选，什么都不弹。
-#
-# 计数器必须落文件。_fc_fzf_read 是在 $(...) 的子 shell 里被调用的，
-# 变量改动出不了子 shell —— 之前用变量计数时每次都以为是第一次调用，
-# 结果永远返回列表行，session 空转到超时。这个坑项目里已记过档。
+#     计数器必须落文件：_fc_fzf_read 在 $(...) 的子 shell 里被调用，变量改动
+#     出不了子 shell，用变量计数会每次都以为是第一次调用，session 空转到超时。
 t_case_action_menu() {
   local cnt logf line n
   local k
@@ -532,24 +491,21 @@ t_case_action_menu() {
     n=$(<"$cnt")
     n=$(( n + 1 ))
     print -r -- "$n" >"$cnt"
-    # 候选数与内容写 stderr：stdout 会被命令替换吞掉。
-    # 裸调用 _fc_session（不接管道），否则它跑在子 shell 里，
-    # 改到的 _FC_ROWS 出不来，末尾就永远报 0 行。
+    # 写 stderr：stdout 会被命令替换吞掉。必须裸调用 _fc_session（不接管道），
+    # 否则它跑在子 shell 里，改到的 _FC_ROWS 出不来，末尾永远报 0 行。
     local -a cand
     local c
     cand=("${(@f)$(cat)}")
     local -a brief
     for c in "${(@)cand}"; do
-      # 列表行带 tab，取首字段（就是包名）；动作行没有 tab，整行照抄。
-      # 目的是让基线里能读出候选是谁，不是还原 fzf 的渲染。
+      # 列表行取首字段（包名），动作行整行照抄：让基线能读出候选是谁。
       [[ $c == *$'\t'* ]] && c=${c%%$'\t'*}
       brief+=("$c")
     done
     print -r -- "  fzf#$n 候选 ${#cand[@]} 个: ${(j: , :)brief}" >&2
     (( ${#cand} == 0 )) && print -r -- "  *** 错误：第 $n 次调用没有候选 ***" >&2
-    # 第 2 次调用就是子菜单，候选必须是动作清单本身。
-    # 这条断言直接对应「回车没反应」：清单解析不出来时，
-    # fzf 收到的还是列表行，动作名变成了整行包名。
+    # 第 2 次调用是子菜单，候选必须是动作清单：清单解析不出来时 fzf 收到的还是
+    # 列表行，症状是「回车没反应」。
     if (( n == 2 )) && [[ "${(j: :)cand}" != 'show hide' ]]; then
       print -r -- "  *** 错误：子菜单候选应为 [show hide]，实为 [${(j: :)cand}] ***" >&2
     fi
@@ -589,19 +545,15 @@ t_case_action_menu() {
   rm -f "$cnt" "$logf"
 }
 
-# 18. 动作失败的处理（B9）
-#
-# 回归点：旧驱动的循环不看退出码 —— 一个包失败也继续跑完剩下的，
-# 而且失败的那个照样被移出列表，于是它从屏幕上消失了但系统里还在。
-# 现在 mutating 动作遇到失败立刻停止，只把成功的移出列表，并打印汇总；
-# 只读动作不中止，因为它没有改变任何状态，「失败」往往只是「没有结果」。
+# 18. 动作失败的处理。mutating 动作遇到失败必须立刻停止，且只把已生效的移出
+#     列表 —— 失败的移出去等于让它从屏幕上消失而系统里还在，再也找不到。
+#     只读动作不中止：它没有改变任何状态，「失败」往往只是「没有结果」。
 t_case_failure() {
   local cnt logf line n log
   local k fallback
   local -a rows
-  # local 而不是 typeset -g：stub _fc_fzf_read 是在 $(...) 子 shell 里被调的，
-  # zsh 动态作用域照样看得到调用者的 local，但它不该以全局的形式活过本用例。
-  # （插件自己也依赖同一个性质，见 base.zsh 的 _fc_fzf_read 读 _FC_HEADER。）
+  # 用 local：stub 在 $(...) 子 shell 里被调，zsh 动态作用域照样看得到，
+  # 但它不该以全局的形式活过本用例。插件自己也依赖这个性质（_FC_HEADER）。
   local SEL_ACT
   cnt=$(mktemp)
   logf=$(mktemp)
@@ -743,8 +695,7 @@ t_case_failure() {
 #   - 空行丢掉
 #   - 末行没有换行也要收进来
 #   - 不改动行内容（tab 原样保留，那是 _fc_render 的输入）
-#     回归点：曾经用 $(cat) slurp，命令替换会吃掉尾部换行，
-#     按行切完末尾多出一个空元素，不清掉就会变成一条空白候选。
+#     命令替换会吃掉尾部换行，按行切完末尾多出一个空元素，不清掉就是一条空白候选。
 t_case_load_rows() {
   local out
   t_sep "常规输入：三行，含空行"
@@ -768,11 +719,9 @@ t_case_load_rows() {
 # 20. 单列 + 无 mutating 动作的视图走流式路径
 #
 # 回归点（用户实测报出）：pnpmf -> search 一直不出候选，越等越久。
-# 重构后所有视图都先把整份列表读进 _FC_ROWS，而 _fc_load_rows 原来的
-# while-read + 数组 append 是 O(n^2)（8 万行 172s，翻一倍 4 倍）。
-# search 的数据源是 all-the-package-names，有 448 万行，于是 fzf
-# 在一个多小时里一个候选都收不到。重构前的 _fzf_search 是
-# `$available | _fzf_tmp_write`，也就是直接流进 fzf，所以是秒开。
+# 缓冲路径的 _fc_load_rows 用 while-read + 数组 append 是 O(n^2)（8 万行 172s，
+# 翻一倍 4 倍），而 search 的数据源 all-the-package-names 有 448 万行 —— 走缓冲
+# 路径的话 fzf 一个多小时都收不到候选。
 #
 # 断言三件事：候选内容与缓冲路径一致（取首字段 + 丢空行）、
 # _FC_ROWS 全程为空、_fc_render 一次都没被调用。
@@ -876,12 +825,11 @@ t_case_stream() {
 }
 
 # 17. pathf / envf 的取值与 --ansi
-#     回归点 1：envf 的行含对齐填充与颜色码，取值必须掐掉它们，且要取
-#     「首个字段之后的全部内容」而不是最后一个空白字段 —— 旧代码用
-#     $F[$#F]，PATH 里有 "/Applications/VMware Fusion.app/..." 时
-#     结果只剩 "Fusion.app/..."。
-#     回归点 2：fzf 必须收 --ani。不给的话它把 \e[34m 当 5 个普通字符，
-#     既不上色也把这 9 个字节算进显示宽度，长行于是被提前截断。
+#     取值要掐掉对齐填充与颜色码，且取「首个字段之后的全部内容」而不是最后
+#     一个空白字段：PATH 里有 "/Applications/VMware Fusion.app/..." 时，
+#     后者只剩 "Fusion.app/..."。
+#     fzf 必须收 --ansi：不给的话它把 \e[34m 当 5 个普通字符，既不上色也把这
+#     9 个字节算进显示宽度，长行于是被提前截断。
 t_case_other_value() {
   # 一次声明完，别在后面再写 local line 之类 —— 变量已是 local 时重复
   # 声明（且不带赋值）会往 stdout 打一行 `line=...`，混进基线。
@@ -897,7 +845,7 @@ t_case_other_value() {
   line="${(l:24:: :)KEY}a b c"
   print -r -- "  值含空格   [$(_other_value "$line")]  (应为 a b c，不能只剩 c)"
 
-  t_sep "取值：值含空格时必须完整（回归点 1）"
+  t_sep "取值：值含空格时必须完整"
   v=$(printenv __MISE_ORIG_PATH)
   if [[ -n $v ]]; then
     line="__MISE_ORIG_PATH${(l:20:: :)}${BLUE}${v}${RESET}"
@@ -913,13 +861,12 @@ t_case_other_value() {
   fi
 
   t_sep "fzf 只在 _fc_fzf_read 里被调用，且它带 --ansi（回归点 2）"
-  # 原来是 grep 本文件里 `| fzf "` 的行数，再数其中带 --ansi 的行数，两个数
-  # 相等就算通过。pathf 与 envf 改走 _fc_fzf_read 之后这两处直接调用消失了，
-  # 于是 0 == 0，那道门会**因为被测对象没了而通过**。这类门最危险的地方在于
-  # 它和「检查通过」在输出上长得一模一样。
+  # 不能数源码里 `| fzf "` 的行数：pathf 与 envf 改走 _fc_fzf_read 之后那两处
+  # 直接调用消失了，数到 0 == 0 就通过 —— 门会因为被测对象没了而通过，而它的
+  # 输出和「检查通过」长得一模一样。
   #
-  # 现在断言的是两件不会因为重构而变空的事：base.zsh 里那唯一一处 fzf 调用
-  # 带着 --ansi；collections 下没有任何文件直接调 fzf。
+  # 断言两件不会变空的事：base.zsh 里唯一那处 fzf 调用带着 --ansi；collections
+  # 下没有任何文件直接调 fzf。
   if grep -qE '^\s*fzf .*--ansi' "$root"/base.zsh; then
     print -r -- '  OK   base.zsh 的 fzf 调用带 --ansi'
   else
@@ -1113,17 +1060,12 @@ t_case_uvf_rows() {
 
 # 21. 配色层：角色名解析、颜色开关、_fc_sgr_strip
 #
-# 回归点 1：角色名写错必须**降级并告警**。查表不能靠判空 —— 'name' 在调色板里
-#   的值就是空串（明确不上色），和拼错的名字一样查不到值。所以 _fc_sgr_prefix 用
-#   [[ -v _FC_SGR[$s] ]] 查。这里断言拼错的名字仍会被发现，否则它会静默
-#   变成不上色，而配色错在哪个 view 上极难看出来。
-# 回归点 2：关色输出必须与「开色再剥色」逐字节相同。这条同时钉住了
-#   「色码不进对齐计算」—— _fc_render 是先补齐后上色，任何一边动了
-#   都会在这里露出来（历史上那三行的起始列就因为剥色正则无效而整体偏 9）。
-# 回归点 3：_fc_sgr_strip 认的是 SGR 本身，不是当前配色。fzf-other.zsh 的
-#   _other_value 原来掐的是固定的首尾两段（绑定当时的配色），而 fzf --ansi
-#   已经先剥过一次，所以配色一换它就失效且不报错。断言里特意用调色板里
-#   没有的颜色（品红）做剥离 —— 用「当前用到的颜色」测是测不出来的。
+# 1. 角色名写错必须降级**并告警**。查表不能靠判空：'name' 的值就是空串（明确
+#    不上色），与拼错的名字一样查不到值，所以只能用 [[ -v ]]。
+# 2. 关色输出必须与「开色再剥色」逐字节相同 —— 这条同时钉住「色码不进对齐
+#    计算」：_fc_render 是先补齐后上色，任何一边动了都会露出来。
+# 3. _fc_sgr_strip 认的是 SGR 本身，不是当前配色。所以用调色板里没有的颜色
+#    （品红）、多参数与真彩来断言 —— 只用当前配色里的颜色是测不出来的。
 t_case_palette() {
   local out p spec role i escf
   local -a colored plain stripped
@@ -1468,19 +1410,14 @@ t_case_readme() {
   fi
 }
 
-# =============================================================================
-# 用例隔离
+# ---- 用例隔离 ----
 #
-# 为什么需要这一层：t_case_read 里有 `_FC_OPTS=()`（为了让退出码测试不受用户
-# opts 干扰）和 `header="Test"`，两处都没有恢复。于是从它之后的所有用例都在
-# 空 opts 下运行，t_case_readme 的 FZF_COLLECTION_OPTS 一致性门拿到一个空数组、
-# 打出「*** 错误」—— 而 baseline 把那段错误录成了预期输出。那道门从落地起就在
-# 报错，而基线「记录现状」的机制不可能发现这一点。
+# 逐个用例快照插件全局再恢复。少了这一层，某个用例清了 _FC_OPTS 就会让后面
+# 全部在空 opts 下运行，而 t_case_readme 那道一致性门会把「*** 错误」打进
+# baseline —— 基线只记录文本，分不出「正确」与「每次都一样地错」。
 #
-# 逐个用例快照再恢复，比「记得在用例里清理」可靠：漏掉的不是一次污染，而是
-# 下一个门的假失败，而假失败往往在几屏之外才被看见。
+# 比「记得在用例里清理」可靠：漏掉的不是一次污染，而是几屏之外的一个假失败。
 # **新增插件全局时必须在这里加一行。**
-# =============================================================================
 
 typeset -ga _T_OPTS _T_ROWS _T_FIELDS _T_STREAM _T_ACTIONS _T_MUTATING
 typeset -ga _T_PICKED _T_DONE _T_FAILED

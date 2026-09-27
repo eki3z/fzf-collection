@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
-# fzf-collection 的唯一入口，由 oh-my-zsh（或手动 source）加载。
-# 下面用 ${0:h:A} 定位本文件并 source body —— 这是 zsh 专有语法。
-# body 全部是 zsh 代码，可自由使用 zsh 特性。
+# 唯一入口，由 oh-my-zsh（或手动 source）加载。${0:h:A} 定位本文件并 source
+# 下面的 body，body 全是 zsh 代码。
 
 # set options if not defined
 if [[ -z ${FZF_COLLECTION_OPTS:-} ]]; then
@@ -34,18 +33,13 @@ fi
 
 source "${0:h:A}/base.zsh"
 
-# 颜色开关。加载时算一次，之后整个 session 不再改。
+# ---- 颜色开关 ----
 #
-# 为什么不能放在显示层判：显示层的 stdout 是通向 fzf 的管道，那里的
-# [[ -t 1 ]] 恒为 false，会把颜色全部关掉。真正决定「输出给谁看」的是
-# 这个文件的 stdout —— 也就是用户敲命令时那个终端。
+# 加载时算一次。不能在显示层判：显示层的 stdout 是通向 fzf 的管道，那里的
+# [[ -t 1 ]] 恒为 false，会把颜色全关掉。
 #
-# 优先级（显式设置最高，其余按 no-color.org 的约定）：
-#   FZF_COLLECTION_COLOR=0|1  >  NO_COLOR 非空  >  TERM 为空或 dumb
-#   >  [[ -t 1 ]]
-#
-# 关闭时 _fc_sgr_prefix 什么都不输出，于是行内容与开启时逐字节相同 ——
-# 只是没有转义序列。对齐、补齐、取值都不受影响。
+# 优先级：FZF_COLLECTION_COLOR=0|1 > NO_COLOR 非空 > TERM 为空或 dumb > [[ -t 1 ]]。
+# 关闭时 _fc_sgr_prefix 不输出任何东西，行内容与开启时逐字节相同，只是没有转义。
 typeset -gi _FC_COLOR=1
 if [[ -z ${FZF_COLLECTION_COLOR:-} ]]; then
   if [[ -n ${NO_COLOR:-} ]] || [[ ${TERM:-dumb} == dumb ]] || [[ ! -t 1 ]]; then

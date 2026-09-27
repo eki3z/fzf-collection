@@ -1,8 +1,5 @@
 #!/usr/bin/env zsh
-# 上面这行是文件元数据（供编辑器与格式化工具识别），不是解释器指令。
-# 本文件是库文件，由 fzf-collection.plugin.zsh 以 source 方式加载。
-# 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
-# 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
+# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
 
 _pipf() {
   pip3 --disable-pip-version-check "$@"
@@ -10,8 +7,8 @@ _pipf() {
 
 # ---- 列表查询：输出 name<TAB>rest ----
 
+# `pip list --format=json` 每项是 {"name": ..., "version": ...}。
 _pipf_list_installed() {
-  # SEE https://unix.stackexchange.com/a/615709
   _pipf list --format=json | jq -r '.[] | "\(.name)\t\(.version)"'
 }
 
@@ -22,11 +19,9 @@ _pipf_list_outdated() {
 
 # 从 pip index 页面抠包名。
 _pipf_list_available() {
-  # 整条链必须留在 C 程序里：index 页有 87 万行。
-  # 原来用 while-read 逐行抠 >…</a>，28s；换成 grep -o + sed 是 0.9s，
-  # 输出逐字节相同（md5 一致）—— grep -o 把一行里的每个锚点都单独打出来，
-  # 正好等价于原来那个 while 内层循环「一次吐一个」的语义；
-  # 而贪婪匹配的 sed 一行只能吐最后一个，所以必须靠 grep -o 先切开。
+  # 整条链必须留在 C 程序里：index 页有 87 万行，grep -o + sed 约 0.9s。
+  # grep -o 把一行里的每个锚点分别打出来，等价于「一次吐一个」；贪婪匹配的
+  # sed 一行只能吐最后一个，所以必须先靠 grep -o 把每个锚点切开。
   curl -s "$(pip config get global.index-url)/" \
     | grep -o '>[^<]*</a>' \
     | sed -e 's/^>//' -e 's|</a>$||'
@@ -34,9 +29,10 @@ _pipf_list_available() {
 
 # ---- pip show 字段提取（显式收参） ----
 
-# 整行含 "<key>: " 才命中，取冒号后的内容。
-# perl 版是 -slne '/^\Q$f\E: (.+)$/' 加 -s（-s 剥掉打印行的前导空白），
-# 所以冒号后若还有多余空格也要剥掉。
+# 从 `pip show` 的输出里取字段，每行一个 `Key: value`，例如
+#   Home-page: https://requests.readthedocs.io
+#   Requires: certifi, idna, urllib3
+# 整行含 "<key>: " 才命中，取冒号后的内容并剥掉残留空白。
 _pipf_extract() {
   local line
   _pipf show "$1" 2>/dev/null | while IFS= read -r line; do
@@ -55,8 +51,7 @@ _pipf_version_list() {
   _pipf index versions --pre "$1" 2>/dev/null | while IFS= read -r line; do
     [[ $line == *'Available versions: '* ]] || continue
     s=${line#*'Available versions: '}
-    # 换行必须走变量：${s//, /$'\n'} 里的 $'\n' 不被求值，
-    # 会原样输出这四个字符。flag 参数是字面量，替换位同理。
+    # 换行走 _FC_NL 变量：替换位里的 $'\n' 不求值，会原样输出这四个字符。
     print -r -- "${s//, /$_FC_NL}"
     break
   done
@@ -81,7 +76,7 @@ _pipf_uninstall() {
     print -r -- "Package [pip] can not be uninstalled !"
     return 1
   fi
-  # REQUIRE pip install pip-autoremove
+  # 需要 pip install pip-autoremove。
   if _fc_have_cmd pip-autoremove && [[ $1 != pip-autoremove ]]; then
     pip-autoremove "$1" --yes
   else
@@ -106,7 +101,7 @@ _pipf_rollback() { _fc_rollback pip "$1" }
 
 # ---- 注册表 ----
 
-# 换行用 base.zsh 的 _FC_NL。这里原来自己声明过一份 _FC_NL。
+# 换行用 base.zsh 的 _FC_NL，collection 里不声明全局。
 
 _FC_REG+=(
   'pip:title'          'Pip'
@@ -121,9 +116,8 @@ _FC_REG+=(
 
   'pip:search'         '_pipf_list_available'
   'pip:search:title'   'Pip Search'
-  # search 列的是**还没装**的包，所以这里不能有 uninstall —— 对一个没装的包
-  # 卸载没有意义，卸载入口只留在 manage。去掉它之后本视图也不再需要缓存列表，
-  # 于是走流式路径（见 base.zsh 的 _fc_view_streamable）。
+  # search 列的是**还没装**的包，uninstall 在这里没有意义，入口只留在 manage。
+  # 因此本视图没有可达的 mutating 动作，走流式路径（见 base.zsh 的 _fc_view_streamable）。
   'pip:search:actions' 'install rollback'
   'pip:search:cols'    'name'
 

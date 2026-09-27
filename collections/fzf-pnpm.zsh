@@ -1,8 +1,5 @@
 #!/usr/bin/env zsh
-# 上面这行是文件元数据（供编辑器与格式化工具识别），不是解释器指令。
-# 本文件是库文件，由 fzf-collection.plugin.zsh 以 source 方式加载。
-# 它仅含函数定义、无顶层入口，即使赋予执行权限直接运行也只会是空操作，
-# 且缺少 base.zsh 的依赖必然失败。文件模式保持 100644，不要 chmod +x。
+# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
 
 _pnpmf() {
   pnpm "$1" --global "${@:2}"
@@ -41,8 +38,7 @@ _pnpmf_version_install() {
 
 # ---- 动作适配器 ----
 
-# 改动类动作走 _pnpmf（带 --global）；只读与未知动作走原生 pnpm，
-# 与旧 _pnpmf_switch 的分支保持一致。
+# 改动类动作走 _pnpmf（带 --global）；只读与未知动作走原生 pnpm。
 _pnpmf_act() {
   case $1 in
     # pnpm update 默认不会跨大版本升，需显式 --latest
