@@ -14,40 +14,40 @@ Env
 Npm Outdated
 ▔▔▔▔▔▔▔▔▔▔▔▔
 
-===== 基本：首字段对齐，其余合并成一段并染蓝 =====
+===== basic: the first field is aligned, the rest merges into one run, in blue =====
 lodash  [34m4.17.21 some description here[0m
 react   [34m18.2.0 desc[0m
 
-===== 制表符与连续空格都要压成单空格（对齐 perl join 的行为） =====
+===== tabs and runs of spaces both collapse to a single space (matching perl join) =====
 a   [34mb c[0m
 dd  [34mee ff[0m
 
-===== 空输入无输出 =====
-  (以上应为空)
+===== empty input prints nothing =====
+  (the above should be empty)
 
-===== 退出码：匹配时 =====
-  _fc_fzf_read 退出码=0
-  fzf 裸调用  退出码=0   ← 两者必须一致
+===== exit code: on a match =====
+  _fc_fzf_read exit code = 0
+  bare fzf call  exit code = 0   <- the two must agree
 
-===== 退出码：无匹配时必须透传 fzf 的 1 =====
-  _fc_fzf_read 退出码=1   ← 必须是 1，不能恒为 0
-  fzf 裸调用  退出码=1
+===== exit code: with no match, fzf's 1 must pass through =====
+  _fc_fzf_read exit code = 1   <- must be 1, never constantly 0
+  bare fzf call  exit code = 1
 
-===== 有 pkg =====
+===== with a pkg =====
 
 [34mmypkg[0m: some message
 
-===== 无 pkg：回退到固定标签，不再依赖 $caller =====
+===== without a pkg: falls back to a fixed label, no longer depends on $caller =====
 
 [34mfzf-collection[0m: another message
 
-===== 取首字段（参数展开，可移植） =====
+===== take the first field (parameter expansion) =====
   first=[lodash]
 
-===== 定长变量切分（可移植，字段数固定时用） =====
+===== fixed-length variable split (depends on read's IFS behaviour, which differs under zsh) =====
   x=[lodash] y=[4.17.21] z=[1.2M]
 
-===== while + 参数展开切分（可移植，字段数不定时用） =====
+===== while + parameter expansion split (this is the one the body uses; it copes with a varying field count) =====
   field=[lodash]
   field=[4.17.21]
   field=[1.2M]
@@ -57,46 +57,52 @@ dd  [34mee ff[0m
   f=[beta]
   f=[gamma]
 
-===== 有 display：每列各自对齐，列间是真 tab =====
+===== with a display: every column aligns on its own, a real tab between columns =====
 lodash
 my package
 
-===== 无 display（search view）：原样输出，不补齐 =====
+===== without a display (the search view): printed as is, no padding =====
 all-the-package-names
 left-pad
 
-===== 回读 name：多词包名完整，且天然没有尾随空格 =====
-  显示行=[my package]
+===== reading the name back: a multi-word package name is intact, and has no trailing space to begin with =====
+  display row=[my package]
   name=[my package]
 
-===== _FC_ROWS 保持干净（未被显示层污染） =====
+===== _FC_ROWS stays clean (not polluted by the display layer) =====
   [alpha	1 beta	2 a-very-long-name	3]
 
-===== 字符级断言：不得出现字面反斜杠 =====
-  OK 无字面反斜杠
-  含真 tab: no
+===== character-level assertion: no literal backslash =====
+  OK no literal backslash
+  contains a real tab: no
 
-===== 对齐断言：各数据列起始位置必须一致 =====
-  [a] f2/=>/f4 起始列: 26,34,41
-  [much-longer-name] f2/=>/f4 起始列: 26,34,41
-  [mid] f2/=>/f4 起始列: 26,34,41
-  OK 各行数据列起始一致
+===== alignment assertion: the data columns must all start in the same column =====
+  [a] f2/=>/f4 start columns: 26,34,41
+  [much-longer-name] f2/=>/f4 start columns: 26,34,41
+  [mid] f2/=>/f4 start columns: 26,34,41
+  OK the data columns start alike in every row
 
-===== 纯度断言：每行必须以包名开头（无 NAME= 污染、无前导 tab） =====
-  各行首段: a | much-longer-name | mid
-  OK 首段与包名一一对应
+===== purity assertion: every row must start with the package name (no NAME= pollution, no leading tab) =====
+  first segment of each row: a | much-longer-name | mid
+  OK the first segments correspond one to one to the package names
 
-===== 删除存在的行 =====
+===== drop a row that exists =====
   n=2  [alpha	1 gamma	3]
 
-===== 删除多词包名（精确匹配，不能误伤其它行） =====
+===== multi-word package name (exact match, must not hit the others) =====
   n=2  [other-pkg	2 my package extra	3]
 
-===== 删除不存在的行（不应误删） =====
+===== a name that does not exist must drop nothing =====
   n=2  [ab	2 axb	3]
 
-===== 对照：glob 写法会误伤（这就是不用它的原因） =====
-  ${(@)_FC_ROWS:#*x*} -> n=1 （3 行被全删）
+===== several names in one call =====
+  n=2  [a	1 c	3]
+
+===== no names at all: nothing is dropped (the array was empty) =====
+  n=2  [a	1 b	2]
+
+===== for comparison: the glob form does collateral damage (why it is unused) =====
+  ${(@)_FC_ROWS:#*x*} -> n=1 (all 3 rows deleted)
 
 ===== act / mutating / stay =====
   update     -         -
@@ -107,7 +113,7 @@ left-pad
   deps       -         stay
   info       -         stay
 
-===== 首字母撞上修饰符的字段（这些曾全部静默返回空） =====
+===== fields whose first letter collides with a modifier (all of these once returned empty silently) =====
   title      -> [Npm]
   stay       -> [homepage deps info]
   fallback   -> [_npmf_act]
@@ -115,7 +121,7 @@ left-pad
   rollback   -> [_npmf_rollback]
   search     -> [_npmf_list_available]
 
-===== 未定义的字段应为空 =====
+===== an undefined field must come back empty =====
   tap        -> []
   head       -> []
   root       -> []
@@ -124,212 +130,208 @@ left-pad
   lower      -> []
   upper      -> []
 
-===== view 专属字段 =====
+===== view-specific fields =====
   manage:title        -> [Npm Manage]
   search:fzf-opts     -> [--tiebreak=begin,length,index]
   mutating:outdated   -> []
 
-===== 对照：直接写变量下标会静默失败 =====
-  ${T[$eco:title]}   = []  ← :t 被当成 tail，丢数据
-  ${T[$eco:views]}   = [a b]  ← :v 不是修饰符，侥幸正常
-  key=npm:title 后 T[$key] = [Npm]  ← 正确做法
+===== for comparison: writing the subscript directly fails silently =====
+  ${T[$eco:title]}   = []  <- :t read as tail, data lost
+  ${T[$eco:views]}   = [a b]  <- :v is not a modifier, works by luck
+  with key=npm:title, T[$key] = [Npm]  <- the correct way
 
-===== 已迁移的 ecosystem 都应留在注册表里 =====
+===== every migrated ecosystem must still be in the registry =====
   npm    title=[Npm] views=[outdated search manage]
   pnpm   title=[Pnpm] views=[outdated search manage]
   pip    title=[Pip] views=[outdated search manage]
 
-===== 对照组：_FC_REG=(...) 替换，_FC_REG+=(...) 才合并 =====
-  T=([x:1] [x:2]) 后再 T=([y:1])  -> 条目数=1  （1 = 被替换）
-  改用 T+=([y:1])               -> 条目数=3  （3 = 正确合并）
+===== the control group: _FC_REG=(...) replaces, only _FC_REG+=(...) merges =====
+  T=([x:1] [x:2]) then T=([y:1])  -> entries=1  (1 = replaced)
+  with T+=([y:1]) instead        -> entries=3  (3 = merged correctly)
 
-===== fzf 从 stdin 读到的候选列表 =====
+===== the candidate list fzf reads from stdin =====
   fzf<- [alpha]
   fzf<- [my package]
-  fzf 共收到 2 行
-  取消后剩余行数=2  （2 = 未误删）
+  fzf received 2 lines in total
+  rows left after the cancel=2  (2 = nothing dropped wrongly)
 
-===== 多选：每行取首字段，多词包名要完整 =====
+===== multi-select: the first field of each row, a multi-word name stays intact =====
   n=3
   [alpha|1.0] -> name=[alpha]
   [my package|2.0] -> name=[my package]
   [gamma|3.0] -> name=[gamma]
 
-===== 单选 =====
+===== single selection =====
   n=1 name=[only one]
 
-===== 注册表自洽性（7 个 ecosystem） =====
-  _fc_rollback 读的数据键：list-versions current-version install-version
-  OK 无碰撞，派发目标全部存在
-  每个 view 都声明了 title/actions/cols 的：是
-  已登记的 ecosystem：gem uv pip brew npm pnpm gh
+===== registry self-consistency (7 ecosystems) =====
+  the data keys _fc_rollback reads: list-versions current-version install-version
+  OK no collisions, every dispatch target exists
+  views that declare title/actions/cols:yes
+  registered ecosystems: gem uv pip brew npm pnpm gh
 
-===== 键形状：每个三段键的第二段 X 必须有 _FC_REG[<eco>:X:title] =====
-  OK 全部 7 个 ecosystem 的三段键顺序一致
+===== key shape: the X in the second segment of every three-segment key needs _FC_REG[<eco>:X:title] =====
+  OK the three-segment keys agree in all 7 ecosystems
 
-===== 驱动解析：每个 view 的动作清单都非空（回车必须有子菜单） =====
-  OK   gem/outdated     5 个动作
-  OK   gem/search       2 个动作
-  OK   gem/manage       5 个动作
-  OK   uv/outdated      6 个动作
-  OK   uv/search        5 个动作
-  OK   uv/manage        5 个动作
-  OK   pip/outdated     6 个动作
-  OK   pip/search       2 个动作
-  OK   pip/manage       6 个动作
-  OK   brew/outdated   10 个动作
-  OK   brew/search     12 个动作
-  OK   brew/manage     13 个动作
-  OK   brew/pinned     12 个动作
-  OK   brew/tap         2 个动作
-  OK   npm/outdated     6 个动作
-  OK   npm/search       5 个动作
-  OK   npm/manage       5 个动作
-  OK   pnpm/outdated    6 个动作
-  OK   pnpm/search      5 个动作
-  OK   pnpm/manage      5 个动作
-  OK   gh/repos         2 个动作
-  OK 全部非空
+===== driver resolution: the action list of every view is non-empty (enter must open a submenu) =====
+  OK   gem/outdated     5 actions
+  OK   gem/search       2 actions
+  OK   gem/manage       5 actions
+  OK   uv/outdated      6 actions
+  OK   uv/search        5 actions
+  OK   uv/manage        5 actions
+  OK   pip/outdated     6 actions
+  OK   pip/search       2 actions
+  OK   pip/manage       6 actions
+  OK   brew/outdated   10 actions
+  OK   brew/search     12 actions
+  OK   brew/manage     13 actions
+  OK   brew/pinned     12 actions
+  OK   brew/tap         2 actions
+  OK   npm/outdated     6 actions
+  OK   npm/search       5 actions
+  OK   npm/manage       5 actions
+  OK   pnpm/outdated    6 actions
+  OK   pnpm/search      5 actions
+  OK   pnpm/manage      5 actions
+  OK   gh/repos         2 actions
+  OK all non-empty
 
-===== 驱动解析：view 级 mutating 覆盖必须真的被取到 =====
-  OK   gem/outdated    覆盖 [upgrade uninstall]
-  OK   pip/outdated    覆盖 [upgrade uninstall]
-  OK   npm/outdated    覆盖 [update uninstall]
-  OK   pnpm/outdated   覆盖 [update remove]
-  OK 覆盖全部生效  fzf#1 候选 2 个: alpha , beta
-  fzf#2 候选 2 个: show , hide
+===== driver resolution: a view-level mutating override really has to be picked up =====
+  OK   gem/outdated    override [upgrade uninstall]
+  OK   pip/outdated    override [upgrade uninstall]
+  OK   npm/outdated    override [update uninstall]
+  OK   pnpm/outdated   override [update remove]
+  OK every override took effect  fzf#1 2 candidates: alpha , beta
+  fzf#2 2 candidates: show , hide
   ACTION act=show pkg=[alpha]
 
-  fzf#3 候选 2 个: show , hide
-  fzf#4 候选 2 个: alpha , beta
-  fzf 共被调用 4 次（4 = 列表 + 子菜单 + 回子菜单 + 取消）
-  剩余行数 2（show 在 stay 里不该删行，应为 2）
+  fzf#3 2 candidates: show , hide
+  fzf#4 2 candidates: alpha , beta
+  fzf was called 4 times in total (4 = list + submenu + back to the list + cancel)
+  2 rows left (show is in stay, so it must not drop a row: 2)
 
-===== mutating 中途失败：立刻停止、只删成功项、失败项可重试 =====
-
-
-  b: 动作 'go' 失败（退出码 1），已停止
-  已完成 1 项并移出列表
-  其余 2 项未执行，仍在列表里
-  fallback 收到 2 次调用: go a go b
-  DONE=a  FAILED=b  未执行=2
-  剩余 3 行: b c d
-
-===== mutating 全部成功：全部移出列表 =====
+===== a mutating action fails midway: stop at once, drop only the successes, the failure can be retried =====
 
 
+  b: action 'go' failed (exit code 1), stopped
+  1 done and dropped from the list
+  the other 2 did not run and are still in the list
+  fallback got 2 calls: go a go b
+  DONE=a  FAILED=b  not run=2
+  3 rows left: b c d
+
+===== every mutating action succeeds: they all come out of the list =====
 
 
-  剩余 0 行: （应为 0）
 
-===== 只读动作返回非零：不中止、不删行 =====
-  fallback 收到 4 次调用（4 = 没提前中止）
-  剩余 4 行: a b c d（应为 4）
 
-===== 退出码 130（Ctrl-C）：措辞与普通失败不同 =====
+  0 rows left:  (should be 0)
 
-  a: 动作 'go' 被 Ctrl-C 中断，已停止
-  其余 3 项未执行，仍在列表里
-  剩余 4 行: a b c d（应为 4，什么都没改成）
+===== a read-only action returns non-zero: it neither aborts nor drops rows =====
+  fallback got 4 calls in total (4 = it did not abort early)
+  4 rows left: a b c d (should be 4)
 
-===== 常规输入：三行，含空行 =====
+===== exit code 130 (Ctrl-C): the wording differs from an ordinary failure =====
+
+  a: action 'go' interrupted by Ctrl-C, stopped
+  the other 3 did not run and are still in the list
+  4 rows left: a b c d (should be 4, nothing changed)
+
+===== ordinary input: three rows, one of them blank =====
   n=2 [alpha	1.0 beta	2.0]
 
-===== 末行无换行 =====
+===== last row without a newline =====
   n=2 [alpha	1.0 beta]
 
-===== 只有空行 =====
+===== blank rows only =====
   n=0 []
 
-===== 无输入 =====
+===== no input =====
   n=0
 
-===== 空行与首尾空白不是一回事：'  ' 要留着 =====
+===== a blank row and leading/trailing whitespace are not the same thing: '  ' stays =====
   n=2 [   x	]
-  fzf#1 收到 2 个候选: alpha,beta
-  fzf#2 收到 1 个候选: install
+  fzf#1 received 2 candidates: alpha,beta
+  fzf#2 received 1 candidates: install
 
-  fzf#3 收到 2 个候选: alpha,beta
-  查询被调用 2 次（2 = 列表 + 动作后回到列表）
-  _FC_ROWS 长度 0（0 = 流式路径不缓冲）
-  动作收到: act=show pkg=[alpha]
-  fzf 共被调用 3 次（3 = 列表 + 子菜单 + 取消）
+  fzf#3 received 2 candidates: alpha,beta
+  the query was called 2 times (2 = the list + back to the list after the action)
+  _FC_ROWS length 0 (0 = the streaming path does not buffer)
+  the action received: act=show pkg=[alpha]
+  fzf was called 3 times in total (3 = list + submenu + cancel)
 
-===== 流式分类：448 万行的 npm / pnpm search 必须判成可流式 =====
-  缓冲   gem/outdated
-  流式   gem/search
-  缓冲   gem/manage
-  缓冲   uv/outdated
-  流式   uv/search
-  缓冲   uv/manage
-  缓冲   pip/outdated
-  流式   pip/search
-  缓冲   pip/manage
-  缓冲   brew/outdated
-  流式   brew/search
-  缓冲   brew/manage
-  缓冲   brew/pinned
-  缓冲   brew/tap
-  缓冲   npm/outdated
-  流式   npm/search
-  缓冲   npm/manage
-  缓冲   pnpm/outdated
-  流式   pnpm/search
-  缓冲   pnpm/manage
-  缓冲   gh/repos
-  OK 448 万行的 search 是流式，多列视图仍走缓冲
-===== 取值：掐掉对齐填充与颜色码 =====
-  带色带填充 [value]  (应为 value)
-  值含空格   [a b c]  (应为 a b c，不能只剩 c)
+===== streaming classification: the 4.48-million-row npm / pnpm search must be judged streamable =====
+  buffered  gem/outdated
+  streaming gem/search
+  buffered  gem/manage
+  buffered  uv/outdated
+  streaming uv/search
+  buffered  uv/manage
+  buffered  pip/outdated
+  streaming pip/search
+  buffered  pip/manage
+  buffered  brew/outdated
+  streaming brew/search
+  buffered  brew/manage
+  buffered  brew/pinned
+  buffered  brew/tap
+  buffered  npm/outdated
+  streaming npm/search
+  buffered  npm/manage
+  buffered  pnpm/outdated
+  streaming pnpm/search
+  buffered  pnpm/manage
+  buffered  gh/repos
+  OK search over 4.48 million rows streams, multi-column views still use the buffered path
+===== value extraction: the alignment padding and the colour codes are dropped =====
+  with colour and padding [value]  (should be value)
+  value has spaces  [a b c]  (should be a b c, not just c)
 
-===== 取值：值含空格时必须完整 =====
-  真实值 896 字符，输出 915 字符（应差 19 = 键名加 ' = '）
-  OK 值完整保留
+===== value extraction: a value containing spaces must come out whole =====
+  the value has 4 spaces and 1 dot, the output is 50 characters (should differ by 15 = the key name plus ' = ')
+  OK the value is kept whole, not reduced to the last field
+  OK runs of spaces are kept character for character
 
-===== fzf 只在 _fc_fzf_read 里被调用，且它带 --ansi（回归点 2） =====
-  OK   base.zsh 的 fzf 调用带 --ansi
-  OK   base.zsh 有 1 处 fzf 调用（唯一允许的）
-  OK   全仓库只有 _fc_fzf_read 调 fzf
+===== fzf is only called in _fc_fzf_read, and it gets --ansi (regression 2) =====
+  OK   the fzf call in base.zsh has --ansi
+  OK   base.zsh has 1 fzf call (the only one allowed)
+  OK   only _fc_fzf_read calls fzf, in the whole repo
 
-===== 显示层：候选行不得超屏宽 =====
-  最长行 131 字符，超 200 列的行 0 条
-  （截断上限由 _ENVF_VALMAX 控制，默认 80）
-  OK
+===== the value layer: the display is truncated, a selection must still print the whole value =====
+  OK                           _ENVF_T_SPACES matches character for character
+  OK                           _ENVF_T_LONG matches character for character
+  OK                           _ENVF_T_NL matches character for character
+  OK                           _ENVF_T_EQ matches character for character
+  OK                           _ENVF_T_EMPTY matches character for character
 
-===== 取值层：显示被截，选中仍须输出完整值 =====
-  OK                           PATH 2562 字符逐字一致
-  OK                           FPATH 2039 字符逐字一致
-  OK                           LS_COLORS 1906 字符逐字一致
-  OK                           FZF_DEFAULT_OPTS 756 字符逐字一致
-  OK                           LUA_INIT 508 字符逐字一致
-  OK                           PWD 51 字符逐字一致
-  OK                           __MISE_ORIG_PATH 896 字符逐字一致
-  OK                           SHLVL 1 字符逐字一致
-  OK                           HOME 10 字符逐字一致
+===== the display layer: a long value must be truncated (a 300-character value the case builds itself) =====
+  OK   a long value is shown as its first 80 characters + ... (83 characters in total)
+  OK   a short value is shown as it is, not truncated
 
-===== 取值层：值为空的环境变量（不能用「是否为空」判存在性） =====
-  OK   输出 [_ENVF_EMPTY_TEST_VAR = ]
+===== the display layer: no row in the real environment is wider than the screen (property only, no length recorded) =====
+  OK   no row in the real environment is over 200 columns
 
-===== manage：顶层行取名与版本，- 开头的可执行文件行丢掉 =====
-  OK   两个工具: [browser-use->0.13.10
+===== manage: take the name and version from the top-level rows, drop the executable rows that start with - =====
+  OK   two tools: [browser-use->0.13.10
 watchdog->6.0.0]
 
-===== manage：空工具目录（uv 打的是 No tools installed，走 stderr） =====
-  OK   无输出: []
+===== manage: no tools installed (uv prints No tools installed, to stderr) =====
+  OK   no output: []
 
-===== manage：只有可执行文件名的行不算工具（名字里没有版本） =====
-  OK   无输出: []
+===== manage: a row with only an executable name is not a tool (no version in the name) =====
+  OK   no output: []
 
-===== outdated：拆出 name/当前/=>/最新 四列 =====
-  OK   单个工具: [ruff->0.2.0->=>->0.16.9]
+===== outdated: split into the four columns name/current/=>/latest =====
+  OK   one tool: [ruff->0.2.0->=>->0.16.9]
 
-===== outdated：其余方括号注解与路径必须先截掉，不能混进版本号 =====
-  OK   注解与路径都被截掉: [ruff->0.1.0->=>->0.16.9]
+===== outdated: the other bracketed annotations and the path must be cut off first, they must not get into the version =====
+  OK   the annotations and the path are both cut off: [ruff->0.1.0->=>->0.16.9]
 
-===== outdated：已是最新时 uv 一行都不给（视图应为空） =====
-  OK   无输出: []
+===== outdated: when it is already the latest, uv prints nothing at all (the view should be empty) =====
+  OK   no output: []
 
-===== 角色名 -> SGR 前缀（空串也合法：表示不上色且不告警） =====
+===== role name -> SGR prefix (the empty string is legal too: it means no colour and no warning) =====
   'name' -> ''
   'have' -> '[34m'
   'sep' -> ''
@@ -337,25 +339,25 @@ watchdog->6.0.0]
   'msg' -> '[34m'
   '' -> ''
 
-===== 数字 spec 现在算未知名：告警并降级 =====
-  '34' -> ['']  告警: fzf-collection: 未知配色角色 '34'，按不上色处理
+===== a numeric spec now counts as an unknown name: it warns and degrades =====
+  '34' -> ['']  warning: fzf-collection: unknown colour role '34', treating it as no colour
   '33' -> ['']
   '1;32' -> ['']
   '0' -> ['']
   '-' -> ['']
-  只有第一条告警: yes（去重靠 _FC_SGR_WARNED）
+  only the first one warns: yes (de-duplication is _FC_SGR_WARNED)
 
-===== 未知角色名：降级为不上色 + 只告警一次 =====
-  前缀=['']（应为空串，即不上色）
-  告警: fzf-collection: 未知配色角色 'nope'，按不上色处理
-  再错一次: []（应为空，一次 session 只吵一次）
+===== an unknown role name: it degrades to no colour + warns exactly once =====
+  prefix=[''] (should be the empty string, i.e. no colour)
+  warning: fzf-collection: unknown colour role 'nope', treating it as no colour
+  wrong once more: [] (should be empty, one session complains once)
 
-===== 颜色开关：关色时零转义，且与「开色再剥色」逐字节相同 =====
-  开色 2 行 / 关色 2 行
-  OK 关色输出不含 ESC
-  OK 剥色后的开色输出 == 关色输出
+===== the colour switch: with colour off there are zero escapes, byte-for-byte the same as colour on then stripped =====
+  2 rows with colour / 2 rows without
+  OK the colour-off output contains no ESC
+  OK the stripped colour-on output == the colour-off output
 
-===== _fc_sgr_strip：认 SGR 本身，与用哪套配色无关 =====
+===== _fc_sgr_strip: it recognises the SGR itself, whatever palette is in use =====
   'have' '[34mX[0m'X -> OK
   'msg' '[34mX[0m'X -> OK
   'name' 'X'X -> OK
@@ -364,20 +366,82 @@ watchdog->6.0.0]
   '[35m' -> OK
   '[1;32m' -> OK
   '[38;2;255;128;0m' -> OK
-  混在中间: ['a	bcd']（应为含一个真 tab）
+  mixed in the middle: ['a	bcd'] (should contain one real tab)
+  OK   calling pathf with no arguments prints [/some/dir/mytool]
+  OK   pathf -d prints directories only
+  OK   _brewf_edit has a fallback, it lands on [EDITOR-CALLED(vi) /tmp/fake-formula.rb]
+  OK   VISUAL wins over EDITOR
+  OK   calling _fc_render with no arguments is fine, it prints [alpha,beta]
+  OK   the whole entry layer passes
 
-===== 公开命令：README 必须逐个收录，且不多不少 =====
-  OK   收录了 brewf
-  OK   收录了 npmf
-  OK   收录了 pnpmf
-  OK   收录了 pipf
-  OK   收录了 uvf
-  OK   收录了 gemf
-  OK   收录了 ghf
-  OK   收录了 pathf
-  OK   收录了 envf
+===== every entry point runs the check =====
+  OK   brewf checks its requirements
+  OK   npmf checks its requirements
+  OK   pnpmf checks its requirements
+  OK   pipf checks its requirements
+  OK   uvf checks its requirements
+  OK   gemf checks its requirements
+  OK   ghf checks its requirements
+  OK   pathf checks its requirements
+  OK   envf checks its requirements
 
-===== view 列表：README 必须覆盖注册表里的全部 view，且不写多余的 =====
+===== the missing names are spelled out =====
+  OK   gem is named
+  OK   several missing commands are listed in order
+  OK   the alternatives are named as one item
+  OK   pathf is not an ecosystem and declares its own
+
+===== alternatives: one hit is enough =====
+  OK   passes with pip present and pip3 absent
+
+===== nothing is reported when everything is present =====
+  OK   none of the nine entry points reports anything
+
+===== the registry: every ecosystem declares requires =====
+  declared: uv pip gem pnpm brew gh npm
+  OK         uv -> uv
+  OK         pip -> pip3|pip
+  OK         gem -> gem
+  OK         pnpm -> pnpm all-the-package-names
+  OK         brew -> brew
+  OK         gh -> gh
+  OK         npm -> npm all-the-package-names
+  OK   no ecosystem lists fzf itself
+  OK   requires all good
+
+
+===== the argv the view's fzf-opts reach fzf with =====
+  fzf#1 argv: [--multi --tiebreak=index --no-sort]
+  OK   --tiebreak=index reached fzf
+  OK   --no-sort reached fzf
+  OK   --multi is still there (the driver default was not squeezed out by fzf-opts)
+  OK   the action submenu does not take fzf-opts
+  OK   every fzf-opts is in place
+
+===== every fzf-opts declared in the registry has to be a legal flag =====
+  OK   pnpm:search:fzf-opts -> --tiebreak=begin,length,index
+  OK   gem:outdated:fzf-opts -> --tiebreak=index
+  OK   pnpm:outdated:fzf-opts -> --tiebreak=index
+  OK   p5:manage:fzf-opts -> --tiebreak=index
+  OK   p5:manage:fzf-opts -> --no-sort
+  OK   npm:outdated:fzf-opts -> --tiebreak=index
+  OK   pip:outdated:fzf-opts -> --tiebreak=index
+  OK   uv:outdated:fzf-opts -> --tiebreak=index
+  OK   brew:outdated:fzf-opts -> --tiebreak=index
+  OK   npm:search:fzf-opts -> --tiebreak=begin,length,index
+
+===== public commands: the README must list every one of them, no more and no fewer =====
+  OK   brewf is listed
+  OK   npmf is listed
+  OK   pnpmf is listed
+  OK   pipf is listed
+  OK   uvf is listed
+  OK   gemf is listed
+  OK   ghf is listed
+  OK   pathf is listed
+  OK   envf is listed
+
+===== the view list: the README must cover every view in the registry, and write nothing extra =====
   OK   brewf: outdated search manage pinned tap
   OK   npmf: outdated search manage
   OK   pnpmf: outdated search manage
@@ -386,43 +450,43 @@ watchdog->6.0.0]
   OK   gemf: outdated search manage
   OK   ghf: repos
 
-===== 不该出现的名字 =====
-  OK   不提 registry view
+===== names that must not appear =====
+  OK   it does not mention the registry view
 
-===== 默认模块列表 =====
-  代码:   [brew npm pnpm pip uv gem gh other]
+===== the default module list =====
+  code:   [brew npm pnpm pip uv gem gh other]
   README: [brew npm pnpm pip uv gem gh other]
-  OK   一致
+  OK   they agree
 
-===== 依赖：README 提到的必须真被调用，代码用到的必须被提到 =====
-  代码用到的 23 个外部命令都已在依赖表中
-  OK   perl 在代码中 0 次调用，README 未声称需要
-  OK   column 在代码中 0 次调用，README 未声称需要
+===== dependencies: what the README mentions must really be called, and what the code uses must be mentioned =====
+  all 23 external commands used by the code are in the dependency table
+  OK   the code calls perl 0 times, the README does not claim it is needed
+  OK   the code calls column 1 times, the README does not claim it is needed
 
-===== 可配置项：代码里每个可覆盖的变量都必须在 README 里有，且名字一致 =====
-  OK   _FC_COLUMN_GAP 有文档
-  OK   _ENVF_VALMAX 有文档
-  OK   _UVF_INDEX 有文档
-  OK   _UVF_PYPI_JSON 有文档
-  代码里可覆盖的插件变量共 4 个：_FC_COLUMN_GAP _ENVF_VALMAX _UVF_INDEX _UVF_PYPI_JSON
+===== tunables: every overridable variable in the code must be in the README, with the same name =====
+  OK   _FC_COLUMN_GAP is documented
+  OK   _ENVF_VALMAX is documented
+  OK   _UVF_INDEX is documented
+  OK   _UVF_PYPI_JSON is documented
+  4 plugin variables the code can override: _FC_COLUMN_GAP _ENVF_VALMAX _UVF_INDEX _UVF_PYPI_JSON
 
-===== 默认值集中在 base.zsh：README 必须写常量名，不能抄一份字面量 =====
-  OK   _FC_ENVF_WIDTH 有文档
-  OK   _FC_PYPI_INDEX 有文档
-  OK   _FC_PYPI_JSON_BASE 有文档
+===== the defaults live in base.zsh: the README must name the constants, not copy a literal =====
+  OK   _FC_ENVF_WIDTH is documented
+  OK   _FC_PYPI_INDEX is documented
+  OK   _FC_PYPI_JSON_BASE is documented
 
-===== clone 地址必须指向本仓库，不能是上游 =====
+===== the clone address must point at this repository, not at upstream =====
   origin = github.com/eki3z/fzf-collection
-  OK   README 的 clone 地址与 origin 一致
+  OK   the clone address in the README agrees with origin
 
-===== jq：README 声称的用法必须与代码一致 =====
-  OK   brew 的 view 数据源确实不用外部 jq
-  OK   gem 的 view 数据源确实不用外部 jq
-  OK   npm 的 outdated 用 jq，README 也列了
-  OK   pnpm 的 outdated 用 jq，README 也列了
-  OK   pip 的 outdated 用 jq，README 也列了
+===== jq: the usage the README claims must agree with the code =====
+  OK   the data sources of the brew views really do not use an external jq
+  OK   the data sources of the gem views really do not use an external jq
+  OK   outdated of npm uses jq, and the README lists it
+  OK   outdated of pnpm uses jq, and the README lists it
+  OK   outdated of pip uses jq, and the README lists it
 
-===== FZF_COLLECTION_OPTS 必须与 _FC_OPTS 逐项一致 =====
-  OK   一致
+===== FZF_COLLECTION_OPTS must agree with _FC_OPTS item for item =====
+  OK   they agree
 
 ### END

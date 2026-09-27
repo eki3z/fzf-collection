@@ -1,21 +1,30 @@
-# 行为基线测试用例。
+# Behaviour baseline test cases.
 #
-# 本文件会被 bash 3.2 / bash 5.3 / zsh 5.9 分别 source，每一行语法必须在三者下
-# 都成立。只覆盖确定性、无副作用的纯函数；不覆盖 _fc_pager（起 less）、
-# _fc_homepage（开浏览器）与 _fc_cmd（要真 fzf 与真包管理器）。
+# This file is only sourced under zsh. The body is zsh-only and does not have to
+# hold under bash -- it used to say here that it was "sourced by bash 3.2 / bash
+# 5.3 / zsh 5.9 respectively", while run.sh has only ever run zsh: a constraint
+# left over from when the project was still bash, and never once executed.
 #
-# **基线只记录文本，分不出「正确」与「每次都一样地错」。** 本仓库已经因此错过
-# 三道门：_fzf_opts 被前一个用例清空、$root 没导出、以及一条用例调用了已被
-# 删除的函数而把 command not found 录成预期。写新用例时先想一遍：它失败时会
-# 打印什么，那行字在 baseline 里会被当成正确还是错误。
+# Only the deterministic, side-effect-free pure functions are covered; not
+# _fc_pager (it starts less), _fc_homepage (it opens a browser) or _fc_cmd (it
+# needs a real fzf and a real package manager).
+#
+# **The baseline only records text, it cannot tell "correct" from "wrong the same
+# way every time".** This repo has already missed three gates because of that:
+# _fzf_opts cleared by the previous case, $root not exported, and a case that
+# called a function which had been deleted, recording command not found as the
+# expected output. Think it through before writing a new case: what does it print
+# when it fails, and will that line be taken for correct or for wrong in the
+# baseline.
 
-# 用例之间的分隔标记，便于 diff 定位
+# The divider between cases, so a diff points at the right one
 t_sep() {
   printf '\n===== %s =====\n' "$1"
 }
 
-# 1. _fc_rule：header 下划线，长度应等于字符串长度。
-#    注意 {1..$#1} 在 bash 下只输出 1 个字符：brace expansion 先于参数展开。
+# 1. _fc_rule: the header underline, whose length should equal the string's.
+#    Note {1..$#1} prints a single character under bash: brace expansion runs
+#    before parameter expansion.
 t_case_rule() {
   local s
   for s in "Header Text" "abc" "Find Path" "Env" "Npm Outdated"; do
@@ -25,59 +34,66 @@ t_case_rule() {
   done
 }
 
-# 2. _other_format：把 name<TAB>rest 渲染成对齐且着色的行。
+# 2. _other_format: render name<TAB>rest into aligned, coloured rows.
 t_case_format() {
-  t_sep "基本：首字段对齐，其余合并成一段并染蓝"
+  t_sep "basic: the first field is aligned, the rest merges into one run, in blue"
   printf 'lodash\t4.17.21\tsome description here\nreact\t18.2.0\tdesc\n' \
     | _other_format
-  t_sep "制表符与连续空格都要压成单空格（对齐 perl join 的行为）"
+  t_sep "tabs and runs of spaces both collapse to a single space (matching perl join)"
   printf 'a\tb  c\ndd\tee\tff\n' | _other_format
-  t_sep "空输入无输出"
+  t_sep "empty input prints nothing"
   printf '' | _other_format
-  print -r -- "  (以上应为空)"
+  print -r -- "  (the above should be empty)"
 }
 
-# 3. _fc_fzf_read：fzf 非交互模式（--filter）与退出码透传。
-#    退出码必须透传，调用方靠它区分「选中」与「取消」并 break 循环。
-#    尾部接任何管道都会吞掉它（管道最后一环的退出码才是 $?）。
+# 3. _fc_fzf_read: fzf in non-interactive mode (--filter), and exit-code passthrough.
+#    The exit code must pass through, the caller relies on it to tell "selected"
+#    from "cancelled" and to break the loop. Any pipe on the end swallows it (the
+#    exit code of the last stage of a pipe is what becomes $?).
 t_case_read() {
   _FC_OPTS=()
   _FC_HEADER="Test"
 
-  t_sep "退出码：匹配时"
+  t_sep "exit code: on a match"
   printf 'alpha\nbeta\n' | _fc_fzf_read --filter=alp >/dev/null
-  print -r -- "  _fc_fzf_read 退出码=$?"
+  print -r -- "  _fc_fzf_read exit code = $?"
   printf 'alpha\nbeta\n' | fzf --filter=alp >/dev/null
-  print -r -- "  fzf 裸调用  退出码=$?   ← 两者必须一致"
+  print -r -- "  bare fzf call  exit code = $?   <- the two must agree"
 
-  t_sep "退出码：无匹配时必须透传 fzf 的 1"
+  t_sep "exit code: with no match, fzf's 1 must pass through"
   printf 'alpha\nbeta\n' | _fc_fzf_read --filter=zzzz >/dev/null
-  print -r -- "  _fc_fzf_read 退出码=$?   ← 必须是 1，不能恒为 0"
+  print -r -- "  _fc_fzf_read exit code = $?   <- must be 1, never constantly 0"
   printf 'alpha\nbeta\n' | fzf --filter=zzzz >/dev/null
-  print -r -- "  fzf 裸调用  退出码=$?"
+  print -r -- "  bare fzf call  exit code = $?"
 }
 
-# 4. _fc_msg：消息输出格式。标签必须显式传，单参调用会打出空标签。
+# 4. _fc_msg: the format of the message output. The label must be passed
+#    explicitly; a one-argument call prints an empty label.
 t_case_msg() {
-  t_sep "有 pkg"
+  t_sep "with a pkg"
   _fc_msg "some message" "mypkg"
-  t_sep "无 pkg：回退到固定标签，不再依赖 \$caller"
+  t_sep "without a pkg: falls back to a fixed label, no longer depends on \$caller"
   caller="MYFUNC"
   _fc_msg "another message"
 }
 
-# 5. 字段拆分：body 需要把「name<TAB>version...」拆开
-#    注意：IFS=$'\t' read -r -a arr 是 bash-only（zsh: bad option: -a），
-#    不可用于 body。下面两种形式在 bash 3.2 / bash 5 / zsh 下均可用。
+# 5. Splitting the fields: the body has to split "name<TAB>version..."
+#    Of the three forms, only the third is what the body actually uses
+#    (_fc_split_row). The first two look portable but are traps, and they are
+#    written down here so nobody picks them up again:
+#      - IFS=$'\t' read -r -a arr fails outright under zsh: bad option: -a (that
+#        is the bash form)
+#      - read -r x y z depends on IFS taking effect, and zsh's read does not
+#        take a leading assignment like that
 t_case_split_row() {
   local row x y z
   row="lodash	4.17.21	1.2M"
-  t_sep "取首字段（参数展开，可移植）"
+  t_sep "take the first field (parameter expansion)"
   printf '  first=[%s]\n' "${row%%	*}"
-  t_sep "定长变量切分（可移植，字段数固定时用）"
+  t_sep "fixed-length variable split (depends on read's IFS behaviour, which differs under zsh)"
   IFS=$'\t' read -r x y z <<< "$row"
   printf '  x=[%s] y=[%s] z=[%s]\n' "$x" "$y" "$z"
-  t_sep "while + 参数展开切分（可移植，字段数不定时用）"
+  t_sep "while + parameter expansion split (this is the one the body uses; it copes with a varying field count)"
   local rest="$row" field
   while [ -n "$rest" ]; do
     case $rest in
@@ -88,8 +104,9 @@ t_case_split_row() {
   done
 }
 
-# 7. 多行结果循环：body 中 7 处 `for f in $(echo "$inst")` 的行为
-#    （zsh 会对命令替换结果分词，此处确认与 bash 一致）
+# 7. Looping over a multi-line result: the behaviour of `for f in $(echo "$inst")`
+#    in the body (zsh word-splits a command substitution on whitespace; the
+#    unquoted loop variable is the body's existing style)
 t_case_loop() {
   local inst f
   inst="alpha
@@ -101,45 +118,50 @@ gamma"
   done
 }
 
-# 8. _fc_render：结构化行 -> 对齐且上色的 fzf 显示行
-#    行结构：name<TAB><补齐><TAB>rest。补齐在第一个 tab 之后，
-#    所以取 name 无需剥空格。对齐只发生在这一层，_FC_ROWS 里是干净数据。
+# 8. _fc_render: structured row -> an aligned, coloured fzf display row
+#    Row structure: name<TAB><padding><TAB>rest. The padding comes after the
+#    first tab, so taking the name needs no whitespace stripping. Alignment
+#    happens only at this layer; _FC_ROWS holds clean data.
 t_case_render() {
   local line out row segs2 c i
   local -a start ref
-  # start/segs2 也用于下面的对齐断言
-  t_sep "有 display：每列各自对齐，列间是真 tab"
+  # start/segs2 are also used by the alignment assertion below
+  t_sep "with a display: every column aligns on its own, a real tab between columns"
   _FC_ROWS=("lodash	4.17.21" "my package	1.0.0 some desc")
   _fc_render | cat -v
-  t_sep "无 display（search view）：原样输出，不补齐"
+  t_sep "without a display (the search view): printed as is, no padding"
   _FC_ROWS=("all-the-package-names" "left-pad")
   _fc_render | cat -v
-  t_sep "回读 name：多词包名完整，且天然没有尾随空格"
+  t_sep "reading the name back: a multi-word package name is intact, and has no trailing space to begin with"
   _FC_ROWS=("my package	1.0.0")
   line=$(_fc_render)
-  printf '  显示行=[%s]\n' "$line"
+  printf '  display row=[%s]\n' "$line"
   printf '  name=[%s]\n' "${line%%	*}"
-  t_sep "_FC_ROWS 保持干净（未被显示层污染）"
+  t_sep "_FC_ROWS stays clean (not polluted by the display layer)"
   _FC_ROWS=("alpha	1" "beta	2" "a-very-long-name	3")
   _fc_render >/dev/null
   printf '  [%s]\n' "${(j:,:)${_FC_ROWS}}"
 
-  # 字符级断言：显示行里绝不能出现字面的反斜杠。${(j:\t:)segs} 的 flag 参数
-  # 是字面量、不解释转义，输出会全是字面 \t；基线只记录现状，抓不到这类 bug。
-  t_sep "字符级断言：不得出现字面反斜杠"
+  # A character-level assertion: a literal backslash must never appear in a
+  # display row. The flag argument of ${(j:\t:)segs} is a literal and does not
+  # interpret escapes, so the output is all literal \t; the baseline only records
+  # the status quo and cannot catch this class of bug.
+  t_sep "character-level assertion: no literal backslash"
   _FC_ROWS=("a	1" "bb	2")
   out=$(_fc_render)
   if [[ $out == *'\'* ]]; then
-    print -r -- '  *** 错误：显示行里出现字面反斜杠，tab 拼接写错了 ***'
+    print -r -- '  *** error: a literal backslash is in the display row, the tab join is wrong ***'
   else
-    print -r -- '  OK 无字面反斜杠'
+    print -r -- '  OK no literal backslash'
   fi
-  [[ $out == *$'\t'* ]] && print -r -- '  含真 tab: yes' || print -r -- '  含真 tab: no'
+  [[ $out == *$'\t'* ]] && print -r -- '  contains a real tab: yes' || print -r -- '  contains a real tab: no'
 
-  # 对齐断言：每个数据列都必须起始于同一列。数组展开必须加引号，否则 zsh 丢弃
-  # 空元素，而补齐段在最长的那行恰好为空 —— 那一行会少一个 tab、整行左移。
-  # 列间的 tab 数不固定，所以只比较数据列本身。
-  t_sep "对齐断言：各数据列起始位置必须一致"
+  # The alignment assertion: every data column has to start in the same column.
+  # The array expansion must be quoted, otherwise zsh drops the empty elements,
+  # and on the longest row the padding segment is exactly the empty one -- that
+  # row loses one tab and the whole row shifts left. The number of tabs between
+  # columns is not fixed, so only the data columns themselves are compared.
+  t_sep "alignment assertion: the data columns must all start in the same column"
   _FC_REG+=('al:manage:cols' 'name have sep want')
   _FC_ROWS=("a	1	=>	1"
              "much-longer-name	22	=>	22"
@@ -151,24 +173,27 @@ t_case_render() {
     c=0; start=()
     for (( i = 2; i <= ${#segs2}; i++ )); do
       c=$(( c + 1 + ${#segs2[i-1]} ))
-      [[ -n ${segs2[i]} ]] && start+=($c)      # 跳过空的补齐段
+      [[ -n ${segs2[i]} ]] && start+=($c)      # skip the empty padding segment
     done
-    # 最后 3 个非空段就是 f2 / => / f4，补齐段在它们之前，不影响
+    # The last 3 non-empty segments are f2 / => / f4; the padding comes before
+    # them, so it does not affect this
     start=("${(@)start[-3,-1]}")
-    print -r -- "  [${segs2[1]}] f2/=>/f4 起始列: ${(j:,:)start}"
+    print -r -- "  [${segs2[1]}] f2/=>/f4 start columns: ${(j:,:)start}"
     if (( ${#ref} == 0 )); then
       ref=("${start[@]}")
     elif [[ ${(j:,:)start} != "${(j:,:)ref}" ]]; then
-      print -r -- "  *** 错位：应为 ${(j:,:)ref} ***"
+      print -r -- "  *** misaligned: should be ${(j:,:)ref} ***"
     fi
   done
-  (( ${#ref} == 3 )) && print -r -- '  OK 各行数据列起始一致'
+  (( ${#ref} == 3 )) && print -r -- '  OK the data columns start alike in every row'
   unset '_FC_REG[al:manage:cols]'
 
-  # 纯度断言：每行必须以包名开头。zsh 5.9 在循环体内执行标量 local 会往 stdout
-  # 打一行 `NAME=<值>`，而本函数的 stdout 直接喂给 fzf，那一行会变成假候选。
-  # zsh -n 查不出，tests/run.sh --hygiene 那道静态门在写入时拦，这里兜住症状。
-  t_sep "纯度断言：每行必须以包名开头（无 NAME= 污染、无前导 tab）"
+  # The purity assertion: every row has to start with the package name. A scalar
+  # local inside a loop body makes zsh 5.9 print a `NAME=<value>` line to stdout,
+  # and this function's stdout feeds fzf directly, so that line becomes a bogus
+  # candidate. zsh -n cannot see it and the static gate at tests/run.sh --hygiene
+  # catches it at write time; this catches the symptom.
+  t_sep "purity assertion: every row must start with the package name (no NAME= pollution, no leading tab)"
   _FC_ROWS=("a	1	=>	1"
              "much-longer-name	22	=>	22"
              "mid	333	=>	333")
@@ -178,38 +203,51 @@ t_case_render() {
   for row in "${(@f)$(_fc_render al manage)}"; do
     names+=("${row%%	*}")
   done
-  print -r -- "  各行首段: ${(j: | :)names}"
+  print -r -- "  first segment of each row: ${(j: | :)names}"
   local expect=('a' 'much-longer-name' 'mid')
   if [[ ${(j:|:)names} == "${(j:|:)expect}" ]]; then
-    print -r -- '  OK 首段与包名一一对应'
+    print -r -- '  OK the first segments correspond one to one to the package names'
   else
-    print -r -- "  *** 错误：首段与包名不符 —— 有非数据行混进了输出 ***"
+    print -r -- "  *** error: the first segments do not match the package names -- a non-data row got into the output ***"
   fi
   unset '_FC_REG[al:manage:cols]'
 }
 
-# 9. _fc_drop_row：从 _FC_ROWS 精确删除匹配的行。
-#    不能用 ${(@)rows:#pat}：它按 glob 匹配整个元素，元素里的 * ? [ 会被当模式。
-t_case_drop_row() {
-  t_sep "删除存在的行"
+# 9. _fc_drop_rows: remove exactly the rows whose first field matches, from
+#    _FC_ROWS.
+#    ${(@)rows:#pat} cannot be used: it globs the whole element, so a * ? or [
+#    inside a name is treated as a pattern.
+#    All the names go in one call: the driver drops a whole batch of finished
+#    packages at once, and one call per name walked the table once per name.
+t_case_drop_rows() {
+  t_sep "drop a row that exists"
   _FC_ROWS=("alpha	1" "beta	2" "gamma	3")
-  _fc_drop_row "beta"
+  _fc_drop_rows "beta"
   printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
-  t_sep "删除多词包名（精确匹配，不能误伤其它行）"
+  t_sep "multi-word package name (exact match, must not hit the others)"
   _FC_ROWS=("my package	1" "other-pkg	2" "my package extra	3")
-  _fc_drop_row "my package"
+  _fc_drop_rows "my package"
   printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
-  t_sep "删除不存在的行（不应误删）"
+  t_sep "a name that does not exist must drop nothing"
   _FC_ROWS=("a*x	1" "ab	2" "axb	3")
-  _fc_drop_row "a*x"
+  _fc_drop_rows "a*x"
   printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
-  t_sep "对照：glob 写法会误伤（这就是不用它的原因）"
+  t_sep "several names in one call"
+  _FC_ROWS=("a	1" "b	2" "c	3" "d	4")
+  _fc_drop_rows "b" "d"
+  printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
+  t_sep "no names at all: nothing is dropped (the array was empty)"
+  _FC_ROWS=("a	1" "b	2")
+  _fc_drop_rows "${_FC_DONE[@]}"
+  printf '  n=%d  [%s]\n' ${#_FC_ROWS} "${(j:,:)${_FC_ROWS}}"
+  t_sep "for comparison: the glob form does collateral damage (why it is unused)"
   _FC_ROWS=("a*x	1" "ab	2" "axb	3")
-  printf '  ${(@)_FC_ROWS:#*x*} -> n=%d （3 行被全删）\n' ${#${(@)_FC_ROWS:#*x*}}
+  printf '  ${(@)_FC_ROWS:#*x*} -> n=%d (all 3 rows deleted)\n' ${#${(@)_FC_ROWS:#*x*}}
 }
 
-# 10. 动作成员判定：${arr[(Ie)act]} 是驱动判断「删行回列表」还是
-#     「留在动作菜单」的唯一依据
+# 10. Action membership: ${arr[(Ie)act]} is the only thing that decides whether
+#     an action "drops the row and goes back to the list" or "stays in the action
+#     menu"
 t_case_membership() {
   local -a mutating stay
   local act m l
@@ -223,72 +261,84 @@ t_case_membership() {
   done
 }
 
-# 11. _fc_reg_get：注册表读取。绝不能写 ${_FC_REG[$var:field]}：zsh 会把 ':' 后
-#     的首字母当成参数修饰符（:t tail / :h head / :r root / :e ext / :s suffix
-#     / :l lower / :u upper）而静默返回空。下面的字段名全部踩过这个坑。
+# 11. _fc_reg_get: reading the registry. Never write ${_FC_REG[$var:field]}:
+#     zsh takes the first letter after the ':' as a parameter modifier (:t tail /
+#     :h head / :r root / :e ext / :s suffix / :l lower / :u upper) and silently
+#     returns empty. Every field name below has hit that trap.
 t_case_reg_get() {
-  t_sep "首字母撞上修饰符的字段（这些曾全部静默返回空）"
+  t_sep "fields whose first letter collides with a modifier (all of these once returned empty silently)"
   local f v
   for f in title stay fallback homepage rollback search; do
     v=$(_fc_reg_get npm "$f")
     printf '  %-10s -> [%s]\n' "$f" "$v"
   done
-  t_sep "未定义的字段应为空"
+  t_sep "an undefined field must come back empty"
   for f in tap head root ext suffix lower upper; do
     v=$(_fc_reg_get npm "$f")
     printf '  %-10s -> [%s]\n' "$f" "$v"
   done
-  t_sep "view 专属字段"
+  t_sep "view-specific fields"
   printf '  manage:title        -> [%s]\n' "$(_fc_reg_get npm manage title)"
   printf '  search:fzf-opts     -> [%s]\n' "$(_fc_reg_get npm search fzf-opts)"
   printf '  mutating:outdated   -> [%s]\n' "$(_fc_reg_get npm mutating outdated)"
-  t_sep "对照：直接写变量下标会静默失败"
+  t_sep "for comparison: writing the subscript directly fails silently"
   local -A T
   T=( [npm:title]=Npm [npm:views]="a b" )
   local eco=npm
-  printf '  ${T[$eco:title]}   = [%s]  ← :t 被当成 tail，丢数据\n' "${T[$eco:title]}"
-  printf '  ${T[$eco:views]}   = [%s]  ← :v 不是修饰符，侥幸正常\n' "${T[$eco:views]}"
+  # ${T[$eco:title]:-}: the key already has a value, and :- does not change the
+  # output outside nounset -- it is here so that this line also runs under
+  # nounset. The nounset gate has to be able to run the whole case, and this
+  # passage **deliberately** demonstrates a form that fails -- and the way it
+  # fails is precisely "silently loses data" rather than an error, so the
+  # nounset gate cannot catch it and should not catch it. The :- is there so that
+  # the ":t is read as tail" conclusion is still printed under nounset.
+  printf '  ${T[$eco:title]}   = [%s]  <- :t read as tail, data lost\n' "${T[$eco:title]:-}"
+  printf '  ${T[$eco:views]}   = [%s]  <- :v is not a modifier, works by luck\n' "${T[$eco:views]:-}"
   local key="${eco}:title"
-  printf '  key=%s 后 T[$key] = [%s]  ← 正确做法\n' "$key" "${T[$key]}"
+  printf '  with key=%s, T[$key] = [%s]  <- the correct way\n' "$key" "${T[$key]:-}"
 }
 
-# 12. 多 ecosystem 注册表共存。关联数组的 _FC_REG=(...) 是**整体替换**，
-#     所以 collection 必须写 _FC_REG+=(...)，否则后 source 的会擦掉先前的。
+# 12. Several ecosystems coexisting in the registry. The associated array
+#     _FC_REG=(...) is a **whole replacement**, so a collection has to write
+#     _FC_REG+=(...), or the one sourced last wipes out the earlier ones.
 t_case_coexist() {
   local eco
-  t_sep "已迁移的 ecosystem 都应留在注册表里"
+  t_sep "every migrated ecosystem must still be in the registry"
   for eco in npm pnpm pip; do
     printf '  %-6s title=[%s] views=[%s]\n' \
       "$eco" "$(_fc_reg_get "$eco" title)" "$(_fc_reg_get "$eco" views)"
   done
-  t_sep "对照组：_FC_REG=(...) 替换，_FC_REG+=(...) 才合并"
+  t_sep "the control group: _FC_REG=(...) replaces, only _FC_REG+=(...) merges"
   local -A T
   T=([x:1]=X [x:2]=Y)
   T=([y:1]=Z)
-  printf '  T=([x:1] [x:2]) 后再 T=([y:1])  -> 条目数=%s  （1 = 被替换）\n' "${#T}"
+  printf '  T=([x:1] [x:2]) then T=([y:1])  -> entries=%s  (1 = replaced)\n' "${#T}"
   T=([x:1]=X [x:2]=Y)
   T+=([y:1]=Z)
-  printf '  改用 T+=([y:1])               -> 条目数=%s  （3 = 正确合并）\n' "${#T}"
+  printf '  with T+=([y:1]) instead        -> entries=%s  (3 = merged correctly)\n' "${#T}"
 }
 
-# 13. _fc_session 必须把列表管道给 fzf。漏掉管道的话 fzf 会去读终端，把用户
-#     输入当成候选列表。用桩替换 _fc_fzf_read，捕获它从 stdin 读到的内容。
+# 13. _fc_session has to pipe the list to fzf. Without the pipe fzf reads the
+#     terminal and takes the user's input for the candidate list. Replace
+#     _fc_fzf_read with a stub and capture what it reads from stdin.
 t_case_session_stdin() {
   local line
-  t_sep "fzf 从 stdin 读到的候选列表"
+  t_sep "the candidate list fzf reads from stdin"
   functions[_t_read_orig]=$functions[_fc_fzf_read]
 
-  # 桩：打印从 stdin 读到的内容，然后模拟「用户取消」。
-  # 必须写 stderr：_fc_fzf_read 在 $(...) 的子 shell 里被调用，写 stdout 会被
-  # 命令替换吞掉，两种情况输出一致就测不出差别。收不到行时显式报错。
+  # The stub: print what it read from stdin, then simulate "the user cancelled".
+  # It has to write to stderr: _fc_fzf_read is called inside a $(...) subshell,
+  # and writing to stdout is swallowed by the command substitution, so the two
+  # cases print the same thing and the test cannot tell them apart. Report an
+  # error explicitly when no line arrives.
   _fc_fzf_read() {
     local line
     local n=0
     while IFS= read -r line; do print -r -- "  fzf<- [$line]" >&2; (( n++ )); done
     if (( n == 0 )); then
-      print -r -- "  *** 错误：fzf 没收到候选列表（_FC_ROWS 未管道给 fzf）***" >&2
+      print -r -- "  *** error: fzf got no candidate list (_FC_ROWS was not piped to fzf) ***" >&2
     else
-      print -r -- "  fzf 共收到 $n 行" >&2
+      print -r -- "  fzf received $n lines in total" >&2
     fi
     return 130
   }
@@ -305,7 +355,7 @@ t_case_session_stdin() {
   )
 
   _fc_session probe manage
-  print "  取消后剩余行数=${#_FC_ROWS}  （2 = 未误删）"
+  print "  rows left after the cancel=${#_FC_ROWS}  (2 = nothing dropped wrongly)"
 
   unfunction _fc_fzf_read _t_list_stub _t_act_stub
   eval "_fc_fzf_read() { $functions[_t_read_orig] }"
@@ -315,12 +365,13 @@ t_case_session_stdin() {
   done
 }
 
-# 14. 多选结果的切分。必须写 "${(@f)sel}"：${(f)"$sel"} 是非法语法，zsh -n
-#     查不出来，只有真正选中之后才在运行时抛 bad substitution。
+# 14. Splitting a multi-selection. It has to be written "${(@f)sel}":
+#     ${(f)"$sel"} is invalid syntax, which zsh -n cannot see -- it only throws
+#     bad substitution at run time, once something has actually been selected.
 t_case_pick_split() {
   local sel p
   local -a picked
-  t_sep "多选：每行取首字段，多词包名要完整"
+  t_sep "multi-select: the first field of each row, a multi-word name stays intact"
   sel="alpha	1.0
 my package	2.0
 gamma	3.0"
@@ -329,22 +380,25 @@ gamma	3.0"
   for p in $picked; do
     printf '  [%s] -> name=[%s]\n' "${p//$'\t'/|}" "${p%%$'\t'*}"
   done
-  t_sep "单选"
+  t_sep "single selection"
   sel="only one	9.9"
   picked=("${(@f)sel}")
   printf '  n=%d name=[%s]\n' "${#picked[@]}" "${picked[1]%%$'\t'*}"
 }
 
-# 15. 注册表自洽：动作名不得与内部数据键相撞，派发结果必须存在。
-#     撞车的后果是选某个动作会命中另一个动作的 handler，而症状要等真的去装
-#     一个包才暴露，所以静态拦。
+# 15. The registry is self-consistent: an action name must not collide with an
+#     internal data key, and every dispatch target has to exist. A collision
+#     means picking one action hits another action's handler, and the symptom
+#     only shows up once you really go and install a package, so it is stopped
+#     statically.
 t_case_registry() {
   local key eco view act fn
   local -a ecos parts views acts k2 reserved providers
   local missing=0
 
-  # 数据键必须从 base.zsh 的 _fc_rollback 里推导，不能在这里抄一份，否则改回
-  # 键名时本用例会跟着变，永远「一致」。
+  # The data keys have to be derived from _fc_rollback in base.zsh, not copied
+  # in here -- otherwise renaming a key makes this case follow along and it is
+  # "consistent" for ever.
   reserved=(${(f)"$(sed -n '/^_fc_rollback()/,/^}/p' base.zsh \
     | grep -o '_fc_reg_get "\$eco" [a-z][a-z-]*' | awk '{print $NF}')"})
   reserved=(${(u)reserved})
@@ -358,13 +412,14 @@ t_case_registry() {
   done
   ecos=(${(u)ecos})
 
-  t_sep "注册表自洽性（${#ecos} 个 ecosystem）"
-  printf '  _fc_rollback 读的数据键：%s\n' "${(j: :)reserved}"
+  t_sep "registry self-consistency (${#ecos} ecosystems)"
+  printf '  the data keys _fc_rollback reads: %s\n' "${(j: :)reserved}"
 
   for eco in $ecos; do
-    # 这几个键指向的函数就是「数据提供函数」。动作一旦解析到其中之一，
-    # 说明 _fc_act 把数据提供器当成了动作处理函数 —— 无论那个键叫什么，
-    # 所以这里比的是函数身份，不是键名。
+    # The functions these keys point at are the "data provider functions". Once
+    # an action resolves to one of them, _fc_act is treating a data provider as
+    # an action handler -- whatever that key is called, so what is compared here
+    # is the function's identity, not the key's name.
     providers=()
     for key in $reserved; do
       fn=$(_fc_reg_get $eco $key)
@@ -376,39 +431,41 @@ t_case_registry() {
       acts=(${(s: :)$(_fc_reg_get $eco $view actions)})
       for act in $acts; do
         fn=$(_fc_reg_get $eco $act)
-        [[ -n $fn ]] || continue                  # 走 fallback，不构成冲突
+        [[ -n $fn ]] || continue                  # it goes to fallback, no collision
         if (( ${providers[(Ie)$fn]} )); then
           missing=1
-          printf '  *** 错误：%s/%s 的动作 %s 解析到数据提供函数 %s ***\n' $eco $view $act $fn
+          printf '  *** error: the action %s of %s/%s resolves to the data provider %s ***\n' $eco $view $act $fn
         fi
         if (( ! ${+functions[$fn]} )); then
           missing=1
-          printf '  *** 错误：%s/%s 的 %s 指向不存在的函数 %s ***\n' $eco $view $act $fn
+          printf '  *** error: the %s of %s/%s points at a function that does not exist: %s ***\n' $eco $view $act $fn
         fi
       done
     done
   done
-  (( missing )) || printf '  OK 无碰撞，派发目标全部存在\n'
-  printf '  每个 view 都声明了 title/actions/cols 的：'
+  (( missing )) || printf '  OK no collisions, every dispatch target exists\n'
+  printf '  views that declare title/actions/cols:'
   for eco in $ecos; do
     for view in ${(s: :)$(_fc_reg_get $eco views)}; do
       k2=()
       for key in $view "${view}:title" "${view}:actions" "${view}:cols"; do
-        [[ -n $(_fc_reg_get $eco $key) ]] || { missing=1; printf '\n    缺 %s/%s 的 %s' $eco $view $key }
+        [[ -n $(_fc_reg_get $eco $key) ]] || { missing=1; printf '\n    missing from %s/%s: %s' $eco $view $key }
       done
     done
   done
-  (( missing )) || printf '是'
+  (( missing )) || printf 'yes'
   printf '\n'
-  printf '  已登记的 ecosystem：%s\n' "${(j: :)ecos}"
+  printf '  registered ecosystems: %s\n' "${(j: :)ecos}"
 }
 
-# 16. 键的形状：_FC_REG[<eco>:<view>:<field>]，且驱动真的解析得到。
-#     形状写反（_FC_REG[<eco>:actions:<view>]）读不到值且**不报错**，症状是
-#     「回车没反应」，所以既查形状也走驱动的真实解析路径查非空。
+# 16. The shape of a key: _FC_REG[<eco>:<view>:<field>], and the driver really
+#     resolves it. The wrong shape (_FC_REG[<eco>:actions:<view>]) reads no value
+#     and **does not error**; the symptom is "pressing enter does nothing", so
+#     both the shape is checked and the driver's real resolution path is walked
+#     for a non-empty value.
 #
-# 这里既查形状（第二段必须是合法 view 名），也走驱动的真实解析路径查非空，
-# 两者都必要：形状对但调用点顺序错，只有后者能抓到。
+# Both checks are needed: the shape check alone passes a key whose segments are
+# in the wrong order, and only the driver's own path catches that.
 t_case_keyshape() {
   local key eco view
   local -a ecos parts
@@ -423,38 +480,40 @@ t_case_keyshape() {
   done
   ecos=(${(u)ecos})
 
-  t_sep "键形状：每个三段键的第二段 X 必须有 _FC_REG[<eco>:X:title]"
+  t_sep "key shape: the X in the second segment of every three-segment key needs _FC_REG[<eco>:X:title]"
   for eco in $ecos; do
     for key in "${(@k)_FC_REG}"; do
       parts=("${(@s.:.)key}")
       (( ${#parts} == 3 )) || continue
       [[ ${parts[1]} == $eco ]] || continue
       view=${parts[2]}
-      # 判据是「这个 X 有没有自己的 title」，不能从现有键反推 X 集合：那样写
-      # 等于把分段顺序写反的键也算成合法 view 名，永远通过。
+      # The criterion is "does this X have a title of its own", and the set of
+      # X cannot be inferred from the keys that exist: written that way, a key
+      # with the segment order reversed counts as a legal view name too, and it
+      # always passes.
       if [[ -z $(_fc_reg_view_get $eco $view title) ]]; then
         bad=1
-        printf '  *** 错误：%s 无 title，不是合法 view（键 %s 的分段顺序反了）***\n' $view $key
+        printf '  *** error: %s has no title, so it is not a legal view (the segments of key %s are reversed) ***\n' $view $key
       fi
     done
   done
-  (( bad )) || printf '  OK 全部 %d 个 ecosystem 的三段键顺序一致\n' ${#ecos}
+  (( bad )) || printf '  OK the three-segment keys agree in all %d ecosystems\n' ${#ecos}
 
-  t_sep "驱动解析：每个 view 的动作清单都非空（回车必须有子菜单）"
+  t_sep "driver resolution: the action list of every view is non-empty (enter must open a submenu)"
   bad=0
   for eco in $ecos; do
     for view in ${(s: :)$(_fc_reg_get $eco views)}; do
       if _fc_reg_view_actions $eco $view 2>/dev/null; then
-        printf '  OK   %-15s %2d 个动作\n' "$eco/$view" ${#_FC_ACTIONS}
+        printf '  OK   %-15s %2d actions\n' "$eco/$view" ${#_FC_ACTIONS}
       else
         bad=1
-        printf '  *** 错误：%s/%s 动作清单为空 ***\n' $eco $view
+        printf '  *** error: the action list of %s/%s is empty ***\n' $eco $view
       fi
     done
   done
-  (( bad )) || printf '  OK 全部非空\n'
+  (( bad )) || printf '  OK all non-empty\n'
 
-  t_sep "驱动解析：view 级 mutating 覆盖必须真的被取到"
+  t_sep "driver resolution: a view-level mutating override really has to be picked up"
   bad=0
   for eco in $ecos; do
     for view in ${(s: :)$(_fc_reg_get $eco views)}; do
@@ -462,22 +521,25 @@ t_case_keyshape() {
       [[ -n $key ]] || continue
       _fc_reg_view_mutating $eco $view
       if [[ ${(j: :)${_FC_MUTATING}} == ${(j: :)${(s: :)key}} ]]; then
-        printf '  OK   %-15s 覆盖 [%s]\n' "$eco/$view" "$key"
+        printf '  OK   %-15s override [%s]\n' "$eco/$view" "$key"
       else
         bad=1
-        printf '  *** 错误：%s/%s 覆盖=[%s] 实际=[%s] ***\n' \
+        printf '  *** error: the override of %s/%s is=[%s] but it actually is=[%s] ***\n' \
           $eco $view "$key" "${(j: :)${_FC_MUTATING}}"
       fi
     done
   done
-  (( bad )) || printf '  OK 覆盖全部生效'
+  (( bad )) || printf '  OK every override took effect'
 }
 
-# 17. 完整循环：列表 -> 回车 -> 子菜单 -> 执行。
-#     第 2 次 fzf 调用必须收到动作清单；收不到的症状是「回车没反应」。
+# 17. The full cycle: list -> enter -> submenu -> run.
+#     The 2nd fzf call has to receive the action list; the symptom of it not
+#     doing so is "pressing enter does nothing".
 #
-#     计数器必须落文件：_fc_fzf_read 在 $(...) 的子 shell 里被调用，变量改动
-#     出不了子 shell，用变量计数会每次都以为是第一次调用，session 空转到超时。
+#     The counter has to go to a file: _fc_fzf_read is called inside a $(...)
+#     subshell, a variable changed there does not get out, and counting in a
+#     variable makes every run think it is the first call, so the session spins
+#     until it times out.
 t_case_action_menu() {
   local cnt logf line n
   local k
@@ -491,26 +553,31 @@ t_case_action_menu() {
     n=$(<"$cnt")
     n=$(( n + 1 ))
     print -r -- "$n" >"$cnt"
-    # 写 stderr：stdout 会被命令替换吞掉。必须裸调用 _fc_session（不接管道），
-    # 否则它跑在子 shell 里，改到的 _FC_ROWS 出不来，末尾永远报 0 行。
+    # Write to stderr: stdout is swallowed by the command substitution.
+    # _fc_session must be called bare (with no pipe), or it runs in a subshell
+    # and the _FC_ROWS it changed does not come back out, so the last line always
+    # reports 0 rows.
     local -a cand
     local c
     cand=("${(@f)$(cat)}")
     local -a brief
     for c in "${(@)cand}"; do
-      # 列表行取首字段（包名），动作行整行照抄：让基线能读出候选是谁。
+      # Take the first field (the package name) of a list row, and copy an
+      # action row whole: that way the baseline can be read to see who the
+      # candidates are.
       [[ $c == *$'\t'* ]] && c=${c%%$'\t'*}
       brief+=("$c")
     done
-    print -r -- "  fzf#$n 候选 ${#cand[@]} 个: ${(j: , :)brief}" >&2
-    (( ${#cand} == 0 )) && print -r -- "  *** 错误：第 $n 次调用没有候选 ***" >&2
-    # 第 2 次调用是子菜单，候选必须是动作清单：清单解析不出来时 fzf 收到的还是
-    # 列表行，症状是「回车没反应」。
+    print -r -- "  fzf#$n ${#cand[@]} candidates: ${(j: , :)brief}" >&2
+    (( ${#cand} == 0 )) && print -r -- "  *** error: call $n has no candidates ***" >&2
+    # The 2nd call is the submenu, and its candidates must be the action list:
+    # when the list does not resolve, fzf still receives the list rows, and the
+    # symptom is "pressing enter does nothing".
     if (( n == 2 )) && [[ "${(j: :)cand}" != 'show hide' ]]; then
-      print -r -- "  *** 错误：子菜单候选应为 [show hide]，实为 [${(j: :)cand}] ***" >&2
+      print -r -- "  *** error: the submenu candidates should be [show hide], they are [${(j: :)cand}] ***" >&2
     fi
     if (( n == 2 )) && [[ "${(j: :)cand[1]}" != show ]]; then
-      print -r -- "  *** 错误：动作名变成了 [$cand[1]]，说明动作清单没解析出来 ***" >&2
+      print -r -- "  *** error: the action name turned into [$cand[1]], so the action list did not resolve ***" >&2
     fi
     case $n in
       1) print -r -- $'alpha\t1.0\t=>\t2.0' ;;
@@ -533,8 +600,8 @@ t_case_action_menu() {
   )
 
   _fc_session probe2 manage
-  print -r -- "  fzf 共被调用 $(<"$cnt") 次（4 = 列表 + 子菜单 + 回子菜单 + 取消）"
-  print -r -- "  剩余行数 ${#_FC_ROWS}（show 在 stay 里不该删行，应为 2）"
+  print -r -- "  fzf was called $(<"$cnt") times in total (4 = list + submenu + back to the list + cancel)"
+  print -r -- "  ${#_FC_ROWS} rows left (show is in stay, so it must not drop a row: 2)"
 
   unfunction _fc_fzf_read _t_probe_list _t_probe_runner
   eval "_fc_fzf_read() { $functions[_t_read_orig] }"
@@ -545,21 +612,24 @@ t_case_action_menu() {
   rm -f "$cnt" "$logf"
 }
 
-# 18. 动作失败的处理。mutating 动作遇到失败必须立刻停止，且只把已生效的移出
-#     列表 —— 失败的移出去等于让它从屏幕上消失而系统里还在，再也找不到。
-#     只读动作不中止：它没有改变任何状态，「失败」往往只是「没有结果」。
+# 18. Handling a failed action. A mutating action that fails has to stop at
+#     once, and only the ones that took effect come out of the list -- taking a
+#     failed one out makes it disappear off the screen while it is still on the
+#     system, and it can never be found again. A read-only action does not abort:
+#     it changes no state, and its "failure" is usually just "no results".
 t_case_failure() {
   local cnt logf line n log
   local k fallback
   local -a rows
-  # 用 local：stub 在 $(...) 子 shell 里被调，zsh 动态作用域照样看得到，
-  # 但它不该以全局的形式活过本用例。插件自己也依赖这个性质（_FC_HEADER）。
+  # local on purpose: the stub is called in a $(...) subshell, and zsh's dynamic
+  # scoping sees it either way, but it should not outlive this case as a global.
+  # The plugin depends on that same property (_FC_HEADER).
   local SEL_ACT
   cnt=$(mktemp)
   logf=$(mktemp)
 
   _t_p4_list() { printf 'a\t1\nb\t2\nc\t3\nd\t4\n' }
-  # 第 2 个包失败，其余成功
+  # The 2nd package fails, the rest succeed
   _t_p4_fail_second() {
     print -r -- "$*" >>"$logf"
     [[ $2 == b ]] && return 1
@@ -567,11 +637,13 @@ t_case_failure() {
   }
   _t_p4_always_ok()  { print -r -- "$*" >>"$logf"; return 0 }
   _t_p4_always_err() { print -r -- "$*" >>"$logf"; return 1 }
-  # 128 + SIGINT：brew 下载 formulae 时被 Ctrl-C 掉就是这个退出码
+  # 128 + SIGINT: this is the exit code when brew is Ctrl-C'd while downloading
+  # a formula
   _t_p4_interrupt()  { print -r -- "$*" >>"$logf"; return 130 }
 
   functions[_t_read_orig]=$functions[_fc_fzf_read]
-  # 计数器落文件：_fc_fzf_read 在 $(...) 子 shell 里被调用，变量出不去
+  # The counter goes to a file: _fc_fzf_read is called inside a $(...) subshell,
+  # a variable does not get out
   _fc_fzf_read() {
     local n
     n=$(<"$cnt")
@@ -585,7 +657,7 @@ t_case_failure() {
     esac
   }
 
-  t_sep "mutating 中途失败：立刻停止、只删成功项、失败项可重试"
+  t_sep "a mutating action fails midway: stop at once, drop only the successes, the failure can be retried"
   fallback=_t_p4_fail_second
   SEL_ACT=go
   _FC_REG+=(
@@ -603,16 +675,16 @@ t_case_failure() {
   : >"$logf"
   _fc_session p4 manage
   log=$(<"$logf")
-  print -r -- "  fallback 收到 ${#${(f)log}} 次调用: ${(j: :)${(f)log}}"
-  print -r -- "  DONE=${(j: :)_FC_DONE}  FAILED=${(j: :)_FC_FAILED}  未执行=${_FC_PENDING}"
+  print -r -- "  fallback got ${#${(f)log}} calls: ${(j: :)${(f)log}}"
+  print -r -- "  DONE=${(j: :)_FC_DONE}  FAILED=${(j: :)_FC_FAILED}  not run=${_FC_PENDING}"
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
-  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}"
+  print -r -- "  ${#rows} rows left: ${(j: :)rows}"
   for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
 
-  t_sep "mutating 全部成功：全部移出列表"
+  t_sep "every mutating action succeeds: they all come out of the list"
   SEL_ACT=go
   _FC_REG+=(
     'p4:title'  'P4'
@@ -630,12 +702,12 @@ t_case_failure() {
   _fc_session p4 manage
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
-  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 0）"
+  print -r -- "  ${#rows} rows left: ${(j: :)rows} (should be 0)"
   for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
 
-  t_sep "只读动作返回非零：不中止、不删行"
+  t_sep "a read-only action returns non-zero: it neither aborts nor drops rows"
   SEL_ACT=peek
   _FC_REG+=(
     'p4:title'  'P4'
@@ -652,15 +724,15 @@ t_case_failure() {
   : >"$logf"
   _fc_session p4 manage
   log=$(<"$logf")
-  print -r -- "  fallback 收到 ${#${(f)log}} 次调用（4 = 没提前中止）"
+  print -r -- "  fallback got ${#${(f)log}} calls in total (4 = it did not abort early)"
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
-  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 4）"
+  print -r -- "  ${#rows} rows left: ${(j: :)rows} (should be 4)"
   for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
 
-  t_sep "退出码 130（Ctrl-C）：措辞与普通失败不同"
+  t_sep "exit code 130 (Ctrl-C): the wording differs from an ordinary failure"
   SEL_ACT=go
   _FC_REG+=(
     'p4:title'  'P4'
@@ -678,7 +750,7 @@ t_case_failure() {
   _fc_session p4 manage
   rows=()
   for line in "${_FC_ROWS[@]}"; do rows+=("${line%%	*}"); done
-  print -r -- "  剩余 ${#rows} 行: ${(j: :)rows}（应为 4，什么都没改成）"
+  print -r -- "  ${#rows} rows left: ${(j: :)rows} (should be 4, nothing changed)"
   for k in title views manage manage:title manage:actions manage:cols mutating stay fallback; do
     unset "_FC_REG[p4:$k]"
   done
@@ -689,42 +761,47 @@ t_case_failure() {
   rm -f "$cnt" "$logf"
 }
 
-# 19. _fc_load_rows：把查询输出收进 _FC_ROWS
+# 19. _fc_load_rows: collecting the query output into _FC_ROWS
 #
-# 这里换掉了实现（原 while-read + arr+=()，O(n^2)），语义必须一模一样：
-#   - 空行丢掉
-#   - 末行没有换行也要收进来
-#   - 不改动行内容（tab 原样保留，那是 _fc_render 的输入）
-#     命令替换会吃掉尾部换行，按行切完末尾多出一个空元素，不清掉就是一条空白候选。
+# The implementation was replaced here (the old while-read + arr+=() is O(n^2)),
+# and the semantics have to be exactly the same:
+#   - blank lines are dropped
+#   - a last line without a newline is still collected
+#   - the content of a row is not altered (tabs stay as they are, that is the
+#     input to _fc_render). A command substitution eats the trailing newline, so
+#     splitting on lines leaves one extra empty element at the end, and without
+#     clearing it that becomes a blank candidate.
 t_case_load_rows() {
   local out
-  t_sep "常规输入：三行，含空行"
+  t_sep "ordinary input: three rows, one of them blank"
   out=$(printf 'alpha\t1.0\n\nbeta\t2.0\n' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
   print -r -- "  $out"
-  t_sep "末行无换行"
+  t_sep "last row without a newline"
   out=$(printf 'alpha\t1.0\nbeta' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
   print -r -- "  $out"
-  t_sep "只有空行"
+  t_sep "blank rows only"
   out=$(printf '\n\n' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:,:)${_FC_ROWS}}]")
   print -r -- "  $out"
-  t_sep "无输入"
+  t_sep "no input"
   out=$(printf '' | _fc_load_rows; print -r -- "n=${#_FC_ROWS}")
   print -r -- "  $out"
-  t_sep "空行与首尾空白不是一回事：'  ' 要留着"
+  t_sep "a blank row and leading/trailing whitespace are not the same thing: '  ' stays"
   out=$(printf '  \nx\t\n' | _fc_load_rows; print -r -- "n=${#_FC_ROWS} [${(j:|:)${_FC_ROWS}}]")
   print -r -- "  $out"
   _FC_ROWS=()
 }
 
-# 20. 单列 + 无 mutating 动作的视图走流式路径
+# 20. A single-column view with no mutating action takes the streaming path
 #
-# 回归点（用户实测报出）：pnpmf -> search 一直不出候选，越等越久。
-# 缓冲路径的 _fc_load_rows 用 while-read + 数组 append 是 O(n^2)（8 万行 172s，
-# 翻一倍 4 倍），而 search 的数据源 all-the-package-names 有 448 万行 —— 走缓冲
-# 路径的话 fzf 一个多小时都收不到候选。
+# The regression (a user reported it): pnpmf -> search never produces candidates,
+# and the longer you wait the worse it gets. _fc_load_rows on the buffered path
+# uses while-read plus an array append, which is O(n^2) (80k rows 172s, double
+# that 4x), while search's data source all-the-package-names has 4.48 million
+# rows -- on the buffered path fzf would not see a candidate for over an hour.
 #
-# 断言三件事：候选内容与缓冲路径一致（取首字段 + 丢空行）、
-# _FC_ROWS 全程为空、_fc_render 一次都没被调用。
+# Three things are asserted: the candidates match the buffered path (first field
+# taken, blank rows dropped), _FC_ROWS stays empty throughout, and _fc_render is
+# never called at all.
 t_case_stream() {
   local cnt qcnt logf log
   local k
@@ -740,7 +817,7 @@ t_case_stream() {
   functions[_t_read_orig]=$functions[_fc_fzf_read]
   functions[_t_render_orig]=$functions[_fc_render]
   _fc_render() {
-    print -r -- '  *** 错误：流式视图不该调用 _fc_render ***' >&2
+    print -r -- '  *** error: a streaming view must not call _fc_render ***' >&2
     cat
   }
   _fc_fzf_read() {
@@ -750,15 +827,16 @@ t_case_stream() {
     print -r -- "$n" >"$cnt"
     cand=("${(@f)$(cat)}")
     cand=("${(@)cand:#}")
-    print -r -- "  fzf#$n 收到 ${#cand[@]} 个候选: ${(j:,:)cand}" >&2
-    (( ${#cand} == 0 )) && print -r -- '  *** 错误：第 '"$n"' 次调用没有候选 ***' >&2
+    print -r -- "  fzf#$n received ${#cand[@]} candidates: ${(j:,:)cand}" >&2
+    (( ${#cand} == 0 )) && print -r -- '  *** error: call '"$n"' has no candidates ***' >&2
     case $n in
       1) print -r -- 'alpha' ;;
       2) print -r -- 'show' ;;
       *) return 130 ;;
     esac
   }
-  # 计数器必须落文件：查询函数是在 _fc_feed 的管道里跑的，出不了子 shell
+  # The counter has to go to a file: the query function runs in _fc_feed's pipe
+  # and does not get out of the subshell
   _t_s_list() {
     print -r -- $(( $(<"$qcnt") + 1 )) >"$qcnt"
     printf 'alpha\t1.0\nbeta\t2.0\n\n'
@@ -771,8 +849,9 @@ t_case_stream() {
     's1:search:title' 'S1 Search'
     's1:search:actions' 'install'
     's1:search:cols'  'name'
-    # 唯一声明的 mutating 动作是 uninstall，而 search 的动作里没有它 ——
-    # 交集为空正是可流式的判据
+    # The only mutating action declared is uninstall, and it is not among
+    # search's actions -- an empty intersection is exactly the criterion for
+    # being streamable
     's1:mutating'     'uninstall'
     's1:stay'         'install'
     's1:fallback'       '_t_s_runner'
@@ -780,10 +859,10 @@ t_case_stream() {
 
   _fc_session s1 search
   log=$(<"$logf")
-  printf '  查询被调用 %s 次（2 = 列表 + 动作后回到列表）\n' "$(<"$qcnt")"
-  printf '  _FC_ROWS 长度 %d（0 = 流式路径不缓冲）\n' "${#_FC_ROWS}"
-  printf '  动作收到: %s\n' "${(j: :)${(f)log}}"
-  printf '  fzf 共被调用 %s 次（3 = 列表 + 子菜单 + 取消）\n' "$(<"$cnt")"
+  printf '  the query was called %s times (2 = the list + back to the list after the action)\n' "$(<"$qcnt")"
+  printf '  _FC_ROWS length %d (0 = the streaming path does not buffer)\n' "${#_FC_ROWS}"
+  printf '  the action received: %s\n' "${(j: :)${(f)log}}"
+  printf '  fzf was called %s times in total (3 = list + submenu + cancel)\n' "$(<"$cnt")"
 
   unfunction _fc_fzf_read _fc_render _t_s_list _t_s_runner
   eval "_fc_fzf_read() { $functions[_t_read_orig] }"
@@ -794,7 +873,7 @@ t_case_stream() {
   done
   rm -f "$cnt" "$qcnt" "$logf"
 
-  t_sep "流式分类：448 万行的 npm / pnpm search 必须判成可流式"
+  t_sep "streaming classification: the 4.48-million-row npm / pnpm search must be judged streamable"
   local key eco view how
   local -a ecos parts
   local bad=0
@@ -808,70 +887,101 @@ t_case_stream() {
   ecos=(${(u)ecos})
   for eco in $ecos; do
     for view in ${(s: :)$(_fc_reg_get $eco views)}; do
-      if _fc_view_streamable "$eco" "$view"; then how=流式; else how=缓冲; fi
-      printf '  %-4s %s/%s\n' "$how" "$eco" "$view"
+      # %-4s is left as it is: it is code, not text. "streaming" is longer than
+      # 4, so the field is simply not padded.
+      if _fc_view_streamable "$eco" "$view"; then how=streaming; else how=buffered; fi
+      # %-9s rather than %-4s: with the labels in English, "streaming" and
+      # "buffered" are 9 and 8 characters, and a 4-column field no longer
+      # covers them, so the output comes out ragged.
+      printf '  %-9s %s/%s\n' "$how" "$eco" "$view"
     done
   done
   for view in npm/search pnpm/search; do
     eco=${view%%/*}; view=${view#*/}
-    _fc_view_streamable "$eco" "$view" || { bad=1; printf '  *** 错误：%s 判成缓冲，search 会重新变成 O(n^2) ***\n' "$eco/$view" }
+    _fc_view_streamable "$eco" "$view" || { bad=1; printf '  *** error: %s was judged buffered, so search goes back to being O(n^2) ***\n' "$eco/$view" }
   done
-  # 多列视图必须留在缓冲路径：它们要宽度预扫描，cut -f1 给不了对齐
+  # A multi-column view has to stay on the buffered path: it needs a width
+  # pre-scan, and cut -f1 cannot give it alignment
   for view in npm/manage pnpm/outdated brew/manage gem/manage; do
     eco=${view%%/*}; view=${view#*/}
-    _fc_view_streamable "$eco" "$view" && { bad=1; printf '  *** 错误：%s 是多列视图，不该判成流式 ***\n' "$eco/$view" }
+    _fc_view_streamable "$eco" "$view" && { bad=1; printf '  *** error: %s is a multi-column view, it must not be judged streaming ***\n' "$eco/$view" }
   done
-  (( bad )) || printf '  OK 448 万行的 search 是流式，多列视图仍走缓冲'
+  (( bad )) || printf '  OK search over 4.48 million rows streams, multi-column views still use the buffered path'
 }
 
-# 17. pathf / envf 的取值与 --ansi
-#     取值要掐掉对齐填充与颜色码，且取「首个字段之后的全部内容」而不是最后
-#     一个空白字段：PATH 里有 "/Applications/VMware Fusion.app/..." 时，
-#     后者只剩 "Fusion.app/..."。
-#     fzf 必须收 --ansi：不给的话它把 \e[34m 当 5 个普通字符，既不上色也把这
-#     9 个字节算进显示宽度，长行于是被提前截断。
+# 17. pathf / envf value extraction and --ansi
+#     Extracting the value has to drop the alignment padding and the colour
+#     codes, and it has to take "everything after the first field" rather than
+#     the last whitespace-separated field: with "/Applications/VMware
+#     Fusion.app/..." in PATH, the latter leaves only "Fusion.app/...".
+#     fzf has to get --ansi: without it it reads \e[34m as 5 ordinary
+#     characters, so it neither colours them nor stops counting those 9 bytes
+#     towards the display width, and long rows get truncated early.
 t_case_other_value() {
-  # 一次声明完，别在后面再写 local line 之类 —— 变量已是 local 时重复
-  # 声明（且不带赋值）会往 stdout 打一行 `line=...`，混进基线。
-  local ESC=$'\e' BLUE RESET PAD r line v
+  # Declare it all at once, do not write another `local line` further down --
+  # redeclaring a scalar local (and without an assignment) prints a `line=...`
+  # line to stdout, which gets into the baseline.
+  # KEY has to be declared: in ${(l:24:: :)KEY} below it is a **placeholder for
+  # the positional parameter**, and under nounset an undeclared KEY counts as an
+  # unset variable and errors. Its value is never used (only its length, 3).
+  # pad is the same case: the value position in ${(l:N:: :)pad} cannot be left
+  # out under nounset, a declared empty variable will do (a local without an
+  # assignment already counts as "set", and reading it gives the empty string).
+  local ESC=$'\e' BLUE RESET PAD r line v KEY=KEY pad
   local bad=0 f n_all n_ansi
   BLUE="${ESC}[34m"
   RESET="${ESC}[0m"
   PAD='                    '
 
-  t_sep "取值：掐掉对齐填充与颜色码"
-  line="${(l:24:: :)KEY}${BLUE}value${RESET}"
-  print -r -- "  带色带填充 [$(_other_value "$line")]  (应为 value)"
-  line="${(l:24:: :)KEY}a b c"
-  print -r -- "  值含空格   [$(_other_value "$line")]  (应为 a b c，不能只剩 c)"
+  t_sep "value extraction: the alignment padding and the colour codes are dropped"
+  # pad=${(l:N:: :)} is a trick this repo uses over and over: its **value** is the
+  # empty string, and what it does is generate N spaces as one independent tab
+  # segment. Under nounset the value position cannot be left out (it would count
+  # as referencing an undeclared parameter), so pad needs a declared name.
+  line="${(l:24:: :)pad}${BLUE}value${RESET}"
+  print -r -- "  with colour and padding [$(_other_value "$line")]  (should be value)"
+  line="${(l:24:: :)pad}a b c"
+  print -r -- "  value has spaces  [$(_other_value "$line")]  (should be a b c, not just c)"
 
-  t_sep "取值：值含空格时必须完整"
-  v=$(printenv __MISE_ORIG_PATH)
-  if [[ -n $v ]]; then
-    line="__MISE_ORIG_PATH${(l:20:: :)}${BLUE}${v}${RESET}"
-    r="${line%%[[:space:]]*} = $(_other_value "$line")"
-    print -r -- "  真实值 ${#v} 字符，输出 ${#r} 字符（应差 19 = 键名加 ' = '）"
-    if [[ $r == "__MISE_ORIG_PATH = $v" ]]; then
-      print -r -- '  OK 值完整保留'
-    else
-      print -r -- '  *** 错误：值被截断 ***'
-    fi
+  t_sep "value extraction: a value containing spaces must come out whole"
+  # A value the case builds itself, not this machine's environment. This used to
+  # read __MISE_ORIG_PATH, which pinned the "896 characters" of this machine into
+  # the baseline: on a machine without mise, this cell takes the else branch and
+  # is skipped, the line count does not match, and the whole behaviour
+  # comparison fails.
+  v='alpha beta/gamma delta.app epsilon'
+  line="SOME_LONG_KEY${(l:20:: :)pad}${BLUE}${v}${RESET}"
+  r="${line%%[[:space:]]*} = $(_other_value "$line")"
+  print -r -- "  the value has 4 spaces and 1 dot, the output is ${#r} characters (should differ by 15 = the key name plus ' = ')"
+  if [[ $r == "SOME_LONG_KEY = $v" ]]; then
+    print -r -- '  OK the value is kept whole, not reduced to the last field'
   else
-    print -r -- '  (本机没有 __MISE_ORIG_PATH，跳过)'
+    print -r -- "  *** error: the value was truncated, it is [$r]"
+  fi
+  # When the value has runs of spaces to begin with, extraction must not squeeze
+  # them out -- what is taken is "everything after the first field"
+  v='a  b   c'
+  line="K${(l:20:: :)pad}${BLUE}${v}${RESET}"
+  r="${line%%[[:space:]]*} = $(_other_value "$line")"
+  if [[ $r == "K = a  b   c" ]]; then
+    print -r -- '  OK runs of spaces are kept character for character'
+  else
+    print -r -- "  *** error: runs of spaces were altered, it is [$r]"
   fi
 
-  t_sep "fzf 只在 _fc_fzf_read 里被调用，且它带 --ansi（回归点 2）"
-  # 不能数源码里 `| fzf "` 的行数：pathf 与 envf 改走 _fc_fzf_read 之后那两处
-  # 直接调用消失了，数到 0 == 0 就通过 —— 门会因为被测对象没了而通过，而它的
-  # 输出和「检查通过」长得一模一样。
+  t_sep "fzf is only called in _fc_fzf_read, and it gets --ansi (regression 2)"
+  # Do not count the lines in the source that have `| fzf "`: once pathf and
+  # envf went through _fc_fzf_read those two direct calls disappeared, so the
+  # count reaches 0 == 0 and passes -- the gate passes because the thing under
+  # test is gone, and its output looks exactly like "the check passed".
   #
-  # 断言两件不会变空的事：base.zsh 里唯一那处 fzf 调用带着 --ansi；collections
-  # 下没有任何文件直接调 fzf。
+  # Two things are asserted that cannot come out empty: the one fzf call in
+  # base.zsh carries --ansi; and no file under collections calls fzf directly.
   if grep -qE '^\s*fzf .*--ansi' "$root"/base.zsh; then
-    print -r -- '  OK   base.zsh 的 fzf 调用带 --ansi'
+    print -r -- '  OK   the fzf call in base.zsh has --ansi'
   else
     bad=1
-    print -r -- '  *** 错误：base.zsh 里的 fzf 调用没带 --ansi ***'
+    print -r -- '  *** error: the fzf call in base.zsh has no --ansi ***'
   fi
   local f2 n2
   n2=0
@@ -879,80 +989,89 @@ t_case_other_value() {
     [[ -f $f2 ]] || continue
     if grep -qE '^\s*fzf ' "$f2"; then
       if [[ $f2 == */base.zsh ]]; then
-        print -r -- "  OK   base.zsh 有 1 处 fzf 调用（唯一允许的）"
+        print -r -- "  OK   base.zsh has 1 fzf call (the only one allowed)"
       else
         n2=$(( n2 + 1 ))
-        print -r -- "  *** 错误：${f2:t} 直接调用了 fzf，应走 _fc_fzf_read ***"
+        print -r -- "  *** error: ${f2:t} calls fzf directly, it should go through _fc_fzf_read ***"
       fi
     fi
   done
   (( n2 == 0 )) || bad=1
-  (( bad )) || print -r -- '  OK   全仓库只有 _fc_fzf_read 调 fzf'
+  (( bad )) || print -r -- '  OK   only _fc_fzf_read calls fzf, in the whole repo'
 }
 
-# 18. envf 的显示宽度与取值还原
-#     回归点：PATH 的值实测 1994 字符（另一次会话里 2562），是 200 列终端的
-#     10 倍以上，FPATH / LS_COLORS / __MISE_ZSH_ACTIVATE_PATH 同样超宽。
-#     fzf 只能截断并横向滚动这些行，一行看着只剩尾部，整个列表像错位。
-#     fp 的值是「目录 + 文件名」，从不满屏，所以 pathf 不受影响 ——
-#     这就是两个命令表现不同的原因。
-#     显示截断后，选中必须仍输出完整值。
+# 18. The display width and value restoration of envf
+#     The regression: in a real environment the value of PATH runs to a thousand
+#     or two thousand characters (measured at 1994 in one session, 2562 in
+#     another), and FPATH / LS_COLORS are just as over-wide. fzf can only
+#     truncate them and scroll sideways, so a row shows only its tail and the
+#     whole list looks misaligned. A pathf value is "directory + file name" and
+#     is never wider than the screen, so it is unaffected -- that is why the two
+#     commands behave differently.
+#     After the display is truncated, selecting a row must still print the whole
+#     value.
+#
+#     **Every asserted value in this case comes from a variable the case exports
+#     itself; the machine's environment is not read.** This used to walk
+#     PATH / FPATH / LS_COLORS / LUA_INIT / __MISE_ORIG_PATH …, which pinned
+#     local state such as "LS_COLORS 1906 characters" or "__MISE_ORIG_PATH 896
+#     characters" into the baseline: on another machine one variable fewer means
+#     one line of output fewer, the behaviour comparison fails, and it fails for
+#     a reason that has nothing to do with the code. The real environment keeps
+#     one property assertion that does not depend on length (no row wider than
+#     the screen), and it prints only the boolean, never a number.
 t_case_envf_width() {
-  # 基准与被测必须同进程同时取：PATH 在子 shell 里会被 zsh/mise 改写，
-  # 跨进程比对毫无意义（曾因此把正确的实现误判成不一致）。
-  #
-  # 临时文件目录用 mktemp -d，不依赖 $root —— $root 只在 tests/run.sh 里定义，
-  # 单独 source 本文件调用某个 t_case_xxx 时它是空的。
+  # A temporary directory via mktemp -d, not $root -- $root is only defined in
+  # tests/run.sh, so it is empty when this file is sourced on its own to call
+  # some t_case_xxx.
   local ESC=$'\e'
   local ENVF_TMP
+  # pad only fills the value position of ${(l:N:: :)pad}; its value is the empty
+  # string (what it does is generate N spaces). Under nounset the value position
+  # cannot be left out, so it has to be a declared name.
+  local pad
+  local valmax=${_ENVF_VALMAX:-$_FC_ENVF_WIDTH}
   ENVF_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fzf-envf.XXXXXX") || return 1
-  typeset -A base
-  local r
-  while IFS= read -r -d $'\0' r; do
-    [[ $r == *=* ]] || continue
-    base[${r%%=*}]=${r#*=}
-  done < <(printenv --null)
 
-  t_sep "显示层：候选行不得超屏宽"
-  local probe=$ENVF_TMP/probe.$$
-  local longest over
-  fzf() { cat > "$probe"; return 0; }
-  # 必须让 envf 直接写文件，不能用 $(envf) 捕获 ——
-  # 桩把候选写进文件后，管道下游没有任何输出，envf 提前返回，
-  # 命令替换会与桩争抢同一个 probe 文件，结果两边都读不到。
-  envf >/dev/null 2>&1
-  if [[ -f $probe ]]; then
-    longest=$(awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }' "$probe")
-    over=$(awk 'length($0) > 200 { c++ } END { print c + 0 }' "$probe")
-    print -r -- "  最长行 ${longest} 字符，超 200 列的行 ${over} 条"
-    print -r -- "  （截断上限由 _ENVF_VALMAX 控制，默认 80）"
-    if (( longest <= 200 )); then
-      print -r -- '  OK'
-    else
-      print -r -- '  *** 错误：仍有超屏宽的行 ***'
-    fi
-  else
-    print -r -- '  (envf 没有产出候选，跳过)'
-  fi
-  rm -f "$probe"
+  # ---- the case's own variables, with fixed values and fixed lengths ----
+  local long
+  # 300 characters, deterministically past the default truncation limit of 80
+  long=${(l:300:: :)pad}
+  long="${long// /x}"
+  export _ENVF_T_SPACES='alpha beta/gamma delta.app'
+  export _ENVF_T_LONG="$long"
+  export _ENVF_T_NL=$'first\nsecond'
+  export _ENVF_T_EQ='has=equals=inside'
+  export _ENVF_T_EMPTY=''
+  typeset -A want_val
+  want_val=(
+    _ENVF_T_SPACES 'alpha beta/gamma delta.app'
+    _ENVF_T_LONG    "$long"
+    _ENVF_T_NL      $'first\nsecond'
+    _ENVF_T_EQ      'has=equals=inside'
+    _ENVF_T_EMPTY   ''
+  )
 
-  t_sep "取值层：显示被截，选中仍须输出完整值"
-  # 桩：模拟「用户只选中了 key 这一行」，走 envf 真实的取值循环。
+  t_sep "the value layer: the display is truncated, a selection must still print the whole value"
+  # The stub: simulate "the user selected one row", going through envf's real
+  # value loop.
   #
-  # 桩不能写成 `fzf() { while read l; ...; }` —— envf 的 fzf 在管道里，
-  # 桩函数的 while 会读到**函数自己的** stdin 而不是管道来的候选，什么都读不到
-  # （曾因此全部报「实际 0」）。正确做法是把候选先落到文件再挑。
+  # The stub must not be written `fzf() { while read l; ...; }` -- envf's fzf is
+  # in a pipe, and the while inside the stub function reads **the function's
+  # own** stdin rather than the candidates coming from the pipe, so it reads
+  # nothing (which is why it once reported "actual 0" everywhere). The right way
+  # is to write the candidates to a file first and pick from there.
   #
-  # want / l / sel 必须在循环外声明 —— 循环体内的标量 local 会污染 stdout。
-  local want got l sel outf pick
-  for want in PATH FPATH LS_COLORS FZF_DEFAULT_OPTS LUA_INIT PWD \
-             __MISE_ORIG_PATH SHLVL HOME; do
-    [[ -n ${base[$want]:-} ]] || continue
+  # want / l / sel must be declared outside the loop -- a scalar local in a loop
+  # body pollutes stdout.
+  local want got l sel outf pick line
+  for want in _ENVF_T_SPACES _ENVF_T_LONG _ENVF_T_NL _ENVF_T_EQ _ENVF_T_EMPTY; do
     outf=$ENVF_TMP/out.$$
     pick=$ENVF_TMP/pick.$$
     fzf() {
       cat > "$pick"
-      # 剥色后按键名挑出那一行，模拟 fzf 选中后输出的内容
+      # Strip the colour, pick that row out by the key name, and simulate what
+      # fzf prints once something is selected
       sed "s/$ESC\\[[0-9;]*m//g" "$pick" 2>/dev/null \
         | while IFS= read -r sel; do
             [[ ${sel%%[[:space:]]*} == $want ]] && { print -r -- "$sel"; break }
@@ -962,125 +1081,474 @@ t_case_envf_width() {
     envf > "$outf" 2>/dev/null
     got=$(<"$outf")
     rm -f "$outf"
-    if [[ $got == "$want = ${base[$want]}" ]]; then
-      print -r -- "  OK   ${(l:24:: :)}$want ${#base[$want]} 字符逐字一致"
+    if [[ $got == "$want = ${want_val[$want]}" ]]; then
+      # ${(l:24:: :)pad} rather than ${(l:24:: )}: the value position cannot be
+      # left out under nounset, leaving it out counts as referencing an
+      # undeclared parameter. pad is declared at the top of the function and its
+      # value is the empty string, so this generates 24 spaces.
+      print -r -- "  OK   ${(l:24:: :)pad}$want matches character for character"
     else
-      print -r -- "  *** 错误 $want：期望长度 $(( ${#want} + 3 + ${#base[$want]} ))，实际 ${#got}"
+      print -r -- "  *** error $want: the expected length is $(( ${#want} + 3 + ${#want_val[$want]} )), the actual is ${#got}"
+      print -r -- "        actual content [${got//[[:cntrl:]]/?}]"
     fi
   done
 
-  t_sep "取值层：值为空的环境变量（不能用「是否为空」判存在性）"
-  export _ENVF_EMPTY_TEST_VAR=''
-  outf=$ENVF_TMP/out.$$
-  pick=$ENVF_TMP/pick.$$
-  fzf() {
-    cat > "$pick"
-    sed "s/$ESC\\[[0-9;]*m//g" "$pick" 2>/dev/null \
-      | while IFS= read -r sel; do
-          [[ ${sel%%[[:space:]]*} == _ENVF_EMPTY_TEST_VAR ]] && { print -r -- "$sel"; break }
-        done
-    rm -f "$pick"
-  }
-  envf > "$outf" 2>/dev/null
-  got=$(<"$outf")
-  rm -f "$outf"
-  if [[ $got == '_ENVF_EMPTY_TEST_VAR = ' ]]; then
-    print -r -- "  OK   输出 [${got}]"
+  t_sep "the display layer: a long value must be truncated (a 300-character value the case builds itself)"
+  # Truncation only happens in the **display layer** (before _other_format), and
+  # everything envf finally prints is the whole value -- that is exactly the
+  # behaviour it should have, so envf's output cannot be used to test truncation.
+  # What has to be tested is "what the row fzf receives looks like", which is
+  # the row the stub picked.
+  #
+  # The assertion takes "the first valmax characters + ..." rather than
+  # measuring the whole row: the row length also contains the alignment padding,
+  # and the padding width depends on the longest key name on screen, which is
+  # decided by a different variable.
+  local disp
+  for want in _ENVF_T_LONG _ENVF_T_SPACES; do
+    pick=$ENVF_TMP/pick.$$
+    disp=$ENVF_TMP/disp.$$
+    fzf() {
+      cat > "$pick"
+      sed "s/$ESC\\[[0-9;]*m//g" "$pick" 2>/dev/null \
+        | while IFS= read -r sel; do
+            [[ ${sel%%[[:space:]]*} == $want ]] && { print -r -- "$sel" >"$disp"; break }
+          done
+      rm -f "$pick"
+    }
+    envf >/dev/null 2>&1
+    got=""
+    if [[ -f $disp ]]; then
+      got=$(_other_value "$(<"$disp")")
+    fi
+    if [[ $want == _ENVF_T_LONG ]]; then
+      if [[ $got == "${long[1,$valmax]}..." ]]; then
+        print -r -- "  OK   a long value is shown as its first $valmax characters + ... (${#got} characters in total)"
+      elif [[ $got == "$long" ]]; then
+        print -r -- '  *** error: it is not truncated at all, a row wider than the screen makes fzf scroll sideways ***'
+      else
+        print -r -- "  *** error: the truncation length is wrong, ${#got} characters (should be $(( valmax + 3 )))"
+      fi
+    else
+      if [[ $got == 'alpha beta/gamma delta.app' ]]; then
+        print -r -- '  OK   a short value is shown as it is, not truncated'
+      else
+        print -r -- "  *** error: a short value was altered [$got]"
+      fi
+    fi
+  done
+
+  t_sep "the display layer: no row in the real environment is wider than the screen (property only, no length recorded)"
+  # This deliberately prints only the boolean result: the length of the real
+  # PATH / FPATH differs per machine, and putting a number into the baseline is
+  # the same as pinning local state. The property itself (no row over 200
+  # columns) holds everywhere.
+  local probe=$ENVF_TMP/probe.$$
+  local over
+  fzf() { cat > "$probe"; return 0; }
+  # envf has to write to the file directly, it must not be captured with
+  # $(envf) -- once the stub has written the candidates to the file there is no
+  # output left in the pipe, envf returns early, and the command substitution
+  # ends up fighting the stub over the same probe file, so neither side can read
+  # it.
+  envf >/dev/null 2>&1
+  if [[ -f $probe ]]; then
+    over=$(awk 'length($0) > 200 { c++ } END { print c + 0 }' "$probe")
+    if (( over == 0 )); then
+      print -r -- '  OK   no row in the real environment is over 200 columns'
+    else
+      print -r -- "  *** error: $over rows are over 200 columns, the truncation is not taking effect"
+    fi
   else
-    print -r -- "  *** 错误：实际 [${got}]"
+    print -r -- '  *** error: envf produced no candidates (the stub did not work)'
   fi
-  unset _ENVF_EMPTY_TEST_VAR
+  rm -f "$probe"
+
+  unset _ENVF_T_SPACES _ENVF_T_LONG _ENVF_T_NL _ENVF_T_EQ _ENVF_T_EMPTY
   rm -rf "$ENVF_TMP"
 }
 
-# 19. uvf 的列表解析
-#     uv 的 `tool list` / `tool list --outdated` 都不接受 --format json，
-#     manage 与 outdated 两个视图的行全靠解析文本，所以这是 uvf 里唯一值得
-#     钉住的行为：顶层行与 `- exe` 行混在同一次输出里，方括号注解还会随
-#     --show-* 变多（见 _uvf_list_outdated 的注释）。
-#     桩掉 uv 而不是真调：没有 uv 的机器也得能跑这条用例。
+# 19. Parsing uvf's list
+#     Neither uv's `tool list` nor `tool list --outdated` accepts --format json,
+#     so the rows of both the manage and the outdated view have to be parsed out
+#     of text; that makes this the only behaviour of uvf worth pinning: the
+#     top-level rows and the `- exe` rows come out of one and the same output,
+#     and the bracketed annotations grow with every --show-* (see the comment in
+#     _uvf_list_outdated). uv is stubbed rather than really called: this case has
+#     to run on a machine without uv too.
 #
-# 断言相等就把实际值一起打出来（它会进基线，逐字节可比）；不等打实际与期望。
-# tab 显示成 -> ，免得基线里混进裸制表符。
-t_uvf_expect() {      # $1=实际 $2=期望 $3=说明
+# On equality the actual value is printed alongside (it goes into the baseline,
+# comparable byte for byte); on inequality, actual and expected are both printed.
+# A tab is displayed as -> , so that no bare tab gets into the baseline.
+t_uvf_expect() {      # $1=actual $2=expected $3=description
   local got=${1//$'\t'/->} want=${2//$'\t'/->}
   if [[ $1 == "$2" ]]; then
     print -r -- "  OK   $3: [$got]"
   else
-    print -r -- "  *** 错误 $3: 实际 [$got] 期望 [$want]"
+    print -r -- "  *** error $3: actual [$got], expected [$want]"
   fi
 }
 
 t_case_uvf_rows() {
   local got want
-  # 桩：$UV_STUB 的每一行就是 uv 打印的一行。UV_STUB 为空时 ${(f)UV_STUB}
-  # 仍给出一个空元素，桩会打一个空行；解析端按「不足两段」丢掉它，
-  # 所以「空工具目录」这一格的期望值仍然是空。
-  functions[uv_orig]=$functions[uv]
+  # The stub: every line of $UV_STUB is one line uv printed. When UV_STUB is
+  # empty ${(f)UV_STUB} still yields one empty element and the stub prints a
+  # blank line; the parser drops it as "fewer than two segments", so the
+  # expected value of the "no tools installed" cell is still empty.
+  #
+  # Saving and restoring the original function has to use ${:-}: `$functions[uv]`
+  # only exists on a machine that has uv installed, and the whole premise of this
+  # case is "it has to run on a machine without uv" (see the comment above).
+  # Under nounset a bare reference to an unset subscript of an associative array
+  # ends the script, so on a machine without uv this case would never reach the
+  # assertion -- the gate would fail because the condition under test does not
+  # exist, not because the code is wrong.
+  #
+  # The restore at the end uses ${:-} too: without uv installed there is no
+  # uv_orig, so restoring means deleting the stub.
+  #
+  # **Do not casually call the real uv.** The stub replaces a function definition
+  # of the same name, and the uv call in _uvf_list_installed resolves to this
+  # stub -- on the condition that uv is **not** an external command cached in
+  # this process's hash table. So the external uv has to be dropped with hash -r
+  # first for the stub to take effect, and put back at the end. Without these
+  # two lines, on a machine with uv installed this case really runs
+  # `uv tool list`, waits out the 0.7s network round trip for an output that has
+  # nothing to do with UV_STUB, and then judges the whole case wrong.
+  hash -r 2>/dev/null
+  functions[uv_orig]=${functions[uv]:-}
   uv() { print -rl -- ${(f)UV_STUB} }
 
-  t_sep "manage：顶层行取名与版本，- 开头的可执行文件行丢掉"
+  t_sep "manage: take the name and version from the top-level rows, drop the executable rows that start with -"
   UV_STUB=$'browser-use v0.13.10\n- browser\n- bu\nwatchdog v6.0.0\n- watchmedo'
   got=$(_uvf_list_installed)
   want=$'browser-use\t0.13.10\nwatchdog\t6.0.0'
-  t_uvf_expect "$got" "$want" '两个工具'
+  t_uvf_expect "$got" "$want" 'two tools'
 
-  t_sep "manage：空工具目录（uv 打的是 No tools installed，走 stderr）"
+  t_sep "manage: no tools installed (uv prints No tools installed, to stderr)"
   UV_STUB=''
   got=$(_uvf_list_installed)
-  t_uvf_expect "$got" '' '无输出'
+  t_uvf_expect "$got" '' 'no output'
 
-  t_sep "manage：只有可执行文件名的行不算工具（名字里没有版本）"
+  t_sep "manage: a row with only an executable name is not a tool (no version in the name)"
   UV_STUB=$'- watchmedo'
   got=$(_uvf_list_installed)
-  t_uvf_expect "$got" '' '无输出'
+  t_uvf_expect "$got" '' 'no output'
 
-  t_sep "outdated：拆出 name/当前/=>/最新 四列"
+  t_sep "outdated: split into the four columns name/current/=>/latest"
   UV_STUB=$'ruff v0.2.0 [latest: 0.16.9]\n- ruff'
   got=$(_uvf_list_outdated)
   want=$'ruff\t0.2.0\t=>\t0.16.9'
-  t_uvf_expect "$got" "$want" '单个工具'
+  t_uvf_expect "$got" "$want" 'one tool'
 
-  t_sep "outdated：其余方括号注解与路径必须先截掉，不能混进版本号"
-  # 这一行同时带 [required:] [CPython] [latest:] 与结尾的 env 路径 ——
-  # 截断若发生在摘 [latest:] 之前，版本列会变成 "0.1.0] [required: ==0.1.0]..."
+  t_sep "outdated: the other bracketed annotations and the path must be cut off first, they must not get into the version"
+  # This row carries [required:] [CPython] [latest:] and the env path at the end
+  # at the same time -- if the cutting happened before [latest:] was picked out,
+  # the version column would become "0.1.0] [required: ==0.1.0]..."
   UV_STUB=$'ruff v0.1.0 [required: ==0.1.0] [CPython 3.14.7] [latest: 0.16.9] (/tmp/t/ruff)'
   got=$(_uvf_list_outdated)
   want=$'ruff\t0.1.0\t=>\t0.16.9'
-  t_uvf_expect "$got" "$want" '注解与路径都被截掉'
+  t_uvf_expect "$got" "$want" 'the annotations and the path are both cut off'
 
-  t_sep "outdated：已是最新时 uv 一行都不给（视图应为空）"
+  t_sep "outdated: when it is already the latest, uv prints nothing at all (the view should be empty)"
   UV_STUB=''
   got=$(_uvf_list_outdated)
-  t_uvf_expect "$got" '' '无输出'
+  t_uvf_expect "$got" '' 'no output'
 
-  functions[uv]=$functions[uv_orig]
+  # On a machine without uv there is no uv_orig: the stub is then the only
+  # source, and deleting it is the restore.
+  if (( ${+functions[uv_orig]} )); then
+    functions[uv]=${functions[uv_orig]}
+  else
+    unfunction uv 2>/dev/null
+  fi
   unset 'uv_orig'
+  # Put the external uv back into the hash table, or every later call to uv in
+  # this process keeps going through the stub.
+  hash -r 2>/dev/null
 }
 
-# 21. 配色层：角色名解析、颜色开关、_fc_sgr_strip
+# 24. requires: the dependency check declared per ecosystem.
 #
-# 1. 角色名写错必须降级**并告警**。查表不能靠判空：'name' 的值就是空串（明确
-#    不上色），与拼错的名字一样查不到值，所以只能用 [[ -v ]]。
-# 2. 关色输出必须与「开色再剥色」逐字节相同 —— 这条同时钉住「色码不进对齐
-#    计算」：_fc_render 是先补齐后上色，任何一边动了都会露出来。
-# 3. _fc_sgr_strip 认的是 SGR 本身，不是当前配色。所以用调色板里没有的颜色
-#    （品红）、多参数与真彩来断言 —— 只用当前配色里的颜色是测不出来的。
+#     Two things have to hold, and neither is visible from reading the code:
+#       1. every `*-f` entry point actually goes through the check. ghf is the
+#          trap: it skips the view menu and calls _fc_session directly, so it
+#          never reaches the check _fc_cmd does, and it has to ask for itself.
+#       2. a missing command is named. The alternative failure is silence: the
+#          view opens and the query returns nothing, which reads as "you have no
+#          packages installed".
+#
+#     How it runs: _fc_have_cmd is stubbed, so this does not depend on what is
+#     installed here. The stub answers "everything exists" first, to prove the
+#     check does not fire when it should not, and then "nothing exists", to
+#     prove it fires and says what.
+t_case_requires() {
+  local key eco view
+  local out
+  local -a ecos entries
+  local bad=0 c pad
+  local -a names
+
+  t_sep "every entry point runs the check"
+  # The nine public commands. Each is called with _fc_have_cmd answering "no",
+  # so a command that skips the check produces no message at all.
+  functions[_t_p8_have_orig]=$functions[_fc_have_cmd]
+  functions[_t_p8_read_orig]=$functions[_fc_fzf_read]
+  # fzf counts as present throughout: it is checked for every command, and
+  # leaving it out of the stub would put it in every message and bury the name
+  # this case is actually about.
+  _fc_have_cmd() { [[ $1 == fzf ]] }
+  _fc_fzf_read() { cat >/dev/null; return 130 }
+  names=(brewf npmf pnpmf pipf uvf gemf ghf pathf envf)
+  for c in "${names[@]}"; do
+    out=$($c 2>&1)
+    if [[ $out == *'fzf-collection: missing'* ]]; then
+      print -r -- "  OK   $c checks its requirements"
+    else
+      bad=1
+      print -r -- "  *** error: $c does not check its requirements, output [$out]"
+    fi
+  done
+
+  t_sep "the missing names are spelled out"
+  out=$(gemf 2>&1)
+  if [[ $out == *'missing gem.'* ]]; then
+    print -r -- '  OK   gem is named'
+  else
+    bad=1
+    print -r -- "  *** error: gem is not named, actual [$out]"
+  fi
+  out=$(npmf 2>&1)
+  if [[ $out == *'missing npm, all-the-package-names.'* ]]; then
+    print -r -- '  OK   several missing commands are listed in order'
+  else
+    bad=1
+    print -r -- "  *** error: actual [$out]"
+  fi
+  out=$(pipf 2>&1)
+  if [[ $out == *'missing pip3|pip.'* ]]; then
+    print -r -- '  OK   the alternatives are named as one item'
+  else
+    bad=1
+    print -r -- "  *** error: actual [$out]"
+  fi
+  out=$(pathf 2>&1)
+  if [[ $out == *'missing find, uniq.'* ]]; then
+    print -r -- '  OK   pathf is not an ecosystem and declares its own'
+  else
+    bad=1
+    print -r -- "  *** error: actual [$out]"
+  fi
+
+  t_sep "alternatives: one hit is enough"
+  _fc_have_cmd() { [[ $1 == fzf || $1 == pip ]] }
+  out=$(pipf 2>&1)
+  if [[ $out != *'missing'* ]]; then
+    print -r -- '  OK   passes with pip present and pip3 absent'
+  else
+    bad=1
+    print -r -- "  *** error: still reports a missing command [$out]"
+  fi
+
+  t_sep "nothing is reported when everything is present"
+  _fc_have_cmd() { return 0 }
+  for c in "${names[@]}"; do
+    out=$($c 2>&1)
+    if [[ $out == *missing* ]]; then
+      bad=1
+      print -r -- "  *** error: $c still reports a missing command with all present [$out]"
+    fi
+  done
+  print -r -- '  OK   none of the nine entry points reports anything'
+
+  t_sep "the registry: every ecosystem declares requires"
+  ecos=()
+  for key in "${(@k)_FC_REG}"; do
+    [[ $key == *:requires ]] || continue
+    ecos+=("${key%%:*}")
+  done
+  ecos=(${(u)ecos})
+  print -r -- "  declared: ${(j: :)ecos}"
+  for eco in $ecos; do
+    out=$(_fc_reg_get "$eco" requires)
+    if [[ -n $out ]]; then
+      print -r -- "  OK   ${(l:6:: :)pad}$eco -> $out"
+    else
+      bad=1
+      print -r -- "  *** error: $eco declares no requires"
+    fi
+  done
+  # fzf must not be in any of them: _fc_require checks it once, for everyone.
+  for eco in $ecos; do
+    for c in ${(s: :)$(_fc_reg_get "$eco" requires)}; do
+      if [[ $c == fzf ]]; then
+        bad=1
+        print -r -- "  *** error: $eco lists fzf, which _fc_require checks for everyone"
+      fi
+    done
+  done
+  print -r -- '  OK   no ecosystem lists fzf itself'
+
+  unfunction _fc_have_cmd _fc_fzf_read
+  eval "_fc_have_cmd() { $functions[_t_p8_have_orig] }"
+  eval "_fc_fzf_read() { $functions[_t_p8_read_orig] }"
+  unfunction _t_p8_have_orig _t_p8_read_orig
+  (( bad )) || print -r -- '  OK   requires all good'
+  return 0
+}
+
+# 23. The entry layer: the commands that can be called with no arguments, and
+#     the places that read the user's environment variables.
+#
+#     These two kinds of place break most easily under nounset, and the syntax /
+#     hygiene / baseline gates all miss them -- they are syntactically correct
+#     and cleanly written, they just reference a value that may not exist:
+#       - a no-argument call into a function whose normal use has arguments
+#         (pathf) writing `[[ "$1" == ... ]]`
+#       - reading $EDITOR / $VISUAL and other external variables that may not be
+#         set
+#
+#     How it runs: stub out the external commands the function under test
+#     depends on, and require only that it "does not terminate on an unset
+#     parameter". Note this case must **not** be taken for done because it
+#     passed locally -- with EDITOR set, a bare $EDITOR is perfectly fine. It
+#     only has discriminating power in the tests/run.sh --nounset round.
+t_case_entry_params() {
+  local got l
+  local bad=0
+
+  # ---- pathf: called with no arguments ----
+  # Stub fzf so that it walks the whole pipe without interacting, and let fzf
+  # select the first row, so that the while loop downstream of the pipe really
+  # runs -- that is where $1 is read. find is stubbed because pathf needs a GNU
+  # find with -printf / -executable, while the one macOS ships is a BSD find
+  # (which fails outright with "unknown primary or operator"), and the case
+  # must not depend on whether the caller has findutils installed.
+  functions[_t_p7_fzf_orig]=$functions[_fc_fzf_read]
+  # ${:-} as in t_case_uvf_rows: find is normally an external command and has no
+  # functions entry, and a bare reference ends the whole script under nounset.
+  functions[_t_p7_find_orig]=${functions[find]:-}
+  _fc_fzf_read() { while IFS= read -r l; do print -r -- "$l"; break; done; return 0 }
+  find() { print -r -- 'mytool /some/dir'; return 0 }
+  got=$(pathf 2>&1)
+  if print -r -- "$got" | grep -qE 'parameter not set|bad substitution'; then
+    bad=1
+    print -r -- '  *** error: calling pathf with no arguments errors under nounset ***'
+    print -r -- "$got" | head -3 | sed 's/^/        /'
+  elif [[ $got != *'/some/dir/mytool' ]]; then
+    bad=1
+    print -r -- "  *** error: calling pathf with no arguments did not reach the extraction step, it is [$got] (the stub did not work)"
+  else
+    print -r -- "  OK   calling pathf with no arguments prints [$got]"
+  fi
+  # With -d it must print directories only
+  got=$(pathf -d 2>&1)
+  if [[ $got == '/some/dir/' ]]; then
+    print -r -- '  OK   pathf -d prints directories only'
+  else
+    bad=1
+    print -r -- "  *** error: pathf -d is [$got]"
+  fi
+
+  # ---- brew edit: $EDITOR / $VISUAL ----
+  # Stub brew and "the editor". The editor is a function rather than an external
+  # command: putting an external command name in VISUAL means the text of a
+  # command not found error gets into $got as well.
+  functions[_t_p7_brew_orig]=$functions[_brewf]
+  _brewf() {
+    if [[ $1 == formula ]]; then
+      print -r -- /tmp/fake-formula.rb
+    fi
+    return 0
+  }
+  _t_p7_editor() { print -r -- "EDITOR-CALLED $*"; }
+  # vi has to be stubbed too: with both EDITOR and VISUAL unset, _brewf_edit
+  # really does start vi and waits for the user to edit, so the test hangs there
+  # (measured: tests/run.sh --record timed out outright). A function takes
+  # precedence over the PATH lookup, so a function of the same name stops that
+  # fallback.
+  vi() { print -r -- "EDITOR-CALLED(vi) $*"; }
+  # Only unsetting can verify the fallback: while it is set, a bare $EDITOR of
+  # course does not error.
+  # The package name has to be passed: _brewf_edit reads $1 itself (to hand it to
+  # brew formula), and a call with no arguments blows up there first under
+  # nounset, so the EDITOR layer would never be reached.
+  unset EDITOR VISUAL
+  got=$(_brewf_edit somepkg 2>&1)
+  if print -r -- "$got" | grep -qE 'parameter not set|bad substitution'; then
+    bad=1
+    print -r -- '  *** error: _brewf_edit errors with neither EDITOR nor VISUAL set ***'
+    print -r -- "$got" | head -3 | sed 's/^/        /'
+  elif [[ $got != 'EDITOR-CALLED(vi) /tmp/fake-formula.rb' ]]; then
+    bad=1
+    print -r -- "  *** error: the fallback did not land on vi, it is [$got]"
+  else
+    print -r -- "  OK   _brewf_edit has a fallback, it lands on [$got]"
+  fi
+  got=$(VISUAL=_t_p7_editor EDITOR=other-editor _brewf_edit somepkg 2>&1)
+  if [[ $got == 'EDITOR-CALLED /tmp/fake-formula.rb' ]]; then
+    print -r -- '  OK   VISUAL wins over EDITOR'
+  else
+    bad=1
+    print -r -- "  *** error: VISUAL did not win, it is [$got]"
+  fi
+  unset VISUAL EDITOR
+
+  # ---- _fc_render: callable with no arguments (a single-column render with no cols) ----
+  _FC_ROWS=("alpha" "beta")
+  got=$(_fc_render 2>&1)
+  if [[ $got == *'parameter not set'* ]]; then
+    bad=1
+    print -r -- '  *** error: calling _fc_render with no arguments errors under nounset ***'
+  else
+    print -r -- "  OK   calling _fc_render with no arguments is fine, it prints [${got//$'\n'/,}]"
+  fi
+  _FC_ROWS=()
+
+  unfunction _fc_fzf_read _brewf _t_p7_editor vi find
+  eval "_fc_fzf_read() { $functions[_t_p7_fzf_orig] }"
+  eval "_brewf() { $functions[_t_p7_brew_orig] }"
+  # find may be an external command with no functions entry, in which case the
+  # stub was never installed to begin with, and restoring "there is no such
+  # function" is right.
+  if (( ${+functions[_t_p7_find_orig]} )); then
+    eval "find() { $functions[_t_p7_find_orig] }"
+  fi
+  unfunction _t_p7_fzf_orig _t_p7_brew_orig _t_p7_find_orig
+  (( bad )) || print -r -- '  OK   the whole entry layer passes'
+  return 0
+}
+
+# 21. The colour layer: role name resolution, the colour switch, _fc_sgr_strip
+#
+# 1. A wrong role name must degrade **and warn**. The lookup cannot go by
+#    "is it empty": the value of 'name' is the empty string (meaning explicitly
+#    no colour) and a misspelled name finds no value either, so only [[ -v ]]
+#    can tell them apart.
+# 2. The colour-off output has to be byte-for-byte identical to "colour on, then
+#    stripped" -- and that also pins "the colour codes do not go into the
+#    alignment calculation": _fc_render pads first and colours after, so a
+#    change on either side shows up here.
+# 3. _fc_sgr_strip recognises the SGR itself, not the current palette. So it is
+#    asserted with a colour that is not in the palette (magenta), with a
+#    multi-parameter SGR and with true colour -- using only the colours of the
+#    current palette cannot tell anything.
 t_case_palette() {
   local out p spec role i escf
   local -a colored plain stripped
 
-  t_sep "角色名 -> SGR 前缀（空串也合法：表示不上色且不告警）"
+  t_sep "role name -> SGR prefix (the empty string is legal too: it means no colour and no warning)"
   for spec in name have sep want msg ''; do
     _fc_sgr_prefix "$spec"
     p=$_FC_SGR_PREFIX
     print -r -- "  ${(qq)spec} -> ${(qq)p}"
   done
 
-  t_sep "数字 spec 现在算未知名：告警并降级"
-  # 以前 34 / 1;32 是合法的 SGR 参数写法，0 与 - 是「不上色」。现在 spec 只能
-  # 是角色名，于是它们全走「未知名」那条路。这一条要断言，因为这是本次唯一一处
-  # **故意**让旧写法失效的改动。
+  t_sep "a numeric spec now counts as an unknown name: it warns and degrades"
+  # 34 / 1;32 used to be legal ways of writing an SGR parameter, and 0 and -
+  # meant "no colour". A spec can now only be a role name, so they all take the
+  # "unknown name" path. This is asserted because it is the only change in this
+  # pass that **deliberately** invalidates the old form.
   escf=$(mktemp)
   _FC_SGR_WARNED=0
   local warned=0
@@ -1089,28 +1557,30 @@ t_case_palette() {
     p=$_FC_SGR_PREFIX
     w=$(<"$escf")
     [[ -n $w ]] && warned=1
-    print -r -- "  ${(qq)spec} -> [${(qq)p}]${w:+  告警: $w}"
+    print -r -- "  ${(qq)spec} -> [${(qq)p}]${w:+  warning: $w}"
   done
-  print -r -- "  只有第一条告警: $( (( warned )) && print yes || print no )（去重靠 _FC_SGR_WARNED）"
+  print -r -- "  only the first one warns: $( (( warned )) && print yes || print no ) (de-duplication is _FC_SGR_WARNED)"
   rm -f "$escf"
   _FC_SGR_WARNED=0
 
-  t_sep "未知角色名：降级为不上色 + 只告警一次"
+  t_sep "an unknown role name: it degrades to no colour + warns exactly once"
   escf=$(mktemp)
   _FC_SGR_WARNED=0
   _fc_sgr_prefix nope 2>"$escf"
   p=$_FC_SGR_PREFIX
-  print -r -- "  前缀=[${(qq)p}]（应为空串，即不上色）"
-  print -r -- "  告警: $(<"$escf")"
-  # 第二次必须安静。_fc_sgr_prefix 走输出变量而不是 print，正是为了这个标志
-  # 能在当前 shell 里存活 —— 走命令替换的话赋值落在子 shell，每次都重吵一遍。
+  print -r -- "  prefix=[${(qq)p}] (should be the empty string, i.e. no colour)"
+  print -r -- "  warning: $(<"$escf")"
+  # The second one has to be silent. _fc_sgr_prefix goes through an output
+  # variable rather than print, precisely so that this flag survives in the
+  # current shell -- through a command substitution the assignment lands in a
+  # subshell and it complains all over again every time.
   _fc_sgr_prefix alsowrong 2>"$escf"
   p=$_FC_SGR_PREFIX
-  print -r -- "  再错一次: [$(<"$escf")]（应为空，一次 session 只吵一次）"
+  print -r -- "  wrong once more: [$(<"$escf")] (should be empty, one session complains once)"
   rm -f "$escf"
   _FC_SGR_WARNED=0
 
-  t_sep "颜色开关：关色时零转义，且与「开色再剥色」逐字节相同"
+  t_sep "the colour switch: with colour off there are zero escapes, byte-for-byte the same as colour on then stripped"
   _FC_REG+=('pal:manage:cols' 'name have sep want')
   _FC_ROWS=("alpha	1.0	=>	2.0"
              "much-longer-name	22	=>	22")
@@ -1118,94 +1588,228 @@ t_case_palette() {
   _FC_COLOR=0
   plain=("${(@f)$(_fc_render pal manage)}")
   _FC_COLOR=1
-  print -r -- "  开色 ${#colored} 行 / 关色 ${#plain} 行"
+  print -r -- "  ${#colored} rows with colour / ${#plain} rows without"
   if [[ ${(j: :)plain} == *$'\e'* ]]; then
-    print -r -- '  *** 错误：关色后仍有转义序列 ***'
+    print -r -- '  *** error: there are still escape sequences with colour off ***'
   else
-    print -r -- '  OK 关色输出不含 ESC'
+    print -r -- '  OK the colour-off output contains no ESC'
   fi
   stripped=()
   local same=1
   for (( i = 1; i <= ${#colored}; i++ )); do
     stripped[i]=$(_fc_sgr_strip "$colored[i]")
-    # 逐行比而不是把数组 join 后一次比：join 的分隔符是 flag 的字面量参数，
-    # ${(j: :.)arr} 里的 $'\n' 不求值（和本项目里那一串 flag 陷阱同源），
-    # 而且逐行比还能指出是哪一行开始不一致。
+    # Compare row by row rather than joining the array and comparing once: the
+    # separator of a join is a literal argument of the flag, the $'\n' in
+    # ${(j: :.)arr} is not evaluated (the same family of flag traps as elsewhere
+    # in this project), and comparing row by row can also point at which row is
+    # the first to differ.
     if [[ ${stripped[i]} != ${plain[i]:-} ]]; then
       same=0
-      print -r -- "  *** 第 $i 行不一致 ***"
+      print -r -- "  *** row $i differs ***"
     fi
   done
   (( ${#colored} == ${#plain} )) || same=0
   if (( same )); then
-    print -r -- '  OK 剥色后的开色输出 == 关色输出'
+    print -r -- '  OK the stripped colour-on output == the colour-off output'
   else
-    print -r -- '  *** 错误：颜色影响了行内容（多半是色码混进了对齐计算） ***'
+    print -r -- '  *** error: the colour affected the row content (most likely the colour codes got into the alignment calculation) ***'
   fi
   unset '_FC_REG[pal:manage:cols]'
 
-  t_sep "_fc_sgr_strip：认 SGR 本身，与用哪套配色无关"
-  # ${(ok)_FC_SGR}：o = 按键排序。不排的话关联数组的遍历顺序不保证，
-  # 基线就会随机漂 —— 这类不稳定输出绝不能进基线。
+  t_sep "_fc_sgr_strip: it recognises the SGR itself, whatever palette is in use"
+  # ${(ok)_FC_SGR}: o = sort by key. Without it the iteration order of an
+  # associative array is not guaranteed and the baseline drifts at random --
+  # output that unstable must never get into the baseline.
   for role in ${(ok)_FC_SGR}; do
     p=$(_fc_sgr_paint "$role" 'X')
     out=$(_fc_sgr_strip "$p")
     if [[ $out == X ]]; then
       print -r -- "  ${(qq)role} ${(qq)p}X -> OK"
     else
-      print -r -- "  ${(qq)role} -> *** 错误：剥完还剩 [${(qq)out}] ***"
+      print -r -- "  ${(qq)role} -> *** error: something is left after stripping [${(qq)out}] ***"
     fi
   done
-  # 调色板里没有的颜色、多参数 SGR、24 位真彩：都不该影响剥离。
+  # A colour that is not in the palette, a multi-parameter SGR, 24-bit true
+  # colour: none of them may affect the stripping.
   for spec in $'\e[35m' $'\e[1;32m' $'\e[38;2;255;128;0m'; do
     out=$(_fc_sgr_strip "${spec}X${_FC_SGR_RESET}")
     if [[ $out == X ]]; then
       print -r -- "  ${(qq)spec} -> OK"
     else
-      print -r -- "  ${(qq)spec} -> *** 错误：剥完还剩 [${(qq)out}] ***"
+      print -r -- "  ${(qq)spec} -> *** error: something is left after stripping [${(qq)out}] ***"
     fi
   done
   out=$(_fc_sgr_strip $'a\tb\e[34mc\e[0md')
-  print -r -- "  混在中间: [${(qq)out}]（应为含一个真 tab）"
+  print -r -- "  mixed in the middle: [${(qq)out}] (should contain one real tab)"
 }
 
-# 20. README 与代码一致
-#     README 曾经把不存在的 `uvf`、不存在的 `registry` view 写进去，
-#     漏掉 pinned / gemf / envf，依赖表也只提了 grep coreutils 和 gh jq。
-#     文档漂移不会让任何东西坏掉，所以不会有人发现 —— 除了专门查它的时候。
-#     cargof / ffp 已移除、fp 已改名为 pathf，本用例的清单必须跟着变，
-#     否则它会把「文档写了不存在的命令」当成正确。
-#     uvf 是后来真加上的：清单里加了它，下面「不该出现的名字」那段对 uvf 的
-#     断言也随之删除 —— 那条断言的来由是它当时确实不存在。
+# 22. View-level fzf-opts must actually reach fzf.
+#
+#     Regression: base.zsh parsed fzf-opts into a local `fzfopts` and then never
+#     used it, passing an undeclared `$opt` to _fc_feed instead. Every
+#     `*:fzf-opts` in the registry was therefore dead -- including
+#     npm:search's `--tiebreak=begin,length,index`, which is the sort order for
+#     a 4.5-million-name list.
+#
+#     The nounset gate (tests/run.sh) catches the *symptom* -- an unset `$opt`
+#     is a "parameter not set" error. It cannot catch "parsed but never passed",
+#     because an unset `$opt` expands to nothing and silently vanishes. So this
+#     case asserts the argv directly.
+#
+#     Precedence asserted here, since it is what the fix has to get right:
+#     FZF_COLLECTION_OPTS (--no-multi) < the driver's --multi < view fzf-opts.
+#     fzf takes the last flag, so a view can opt back out of --multi.
+t_case_fzf_opts() {
+  local argf cnt
+  local k
+  local n
+  local line
+  local bad=0
+  local -a calls
+  cnt=$(mktemp)
+  argf=$(mktemp)
+  print -r -- 0 >"$cnt"
+  : >"$argf"
+
+  functions[_t_read_orig]=$functions[_fc_fzf_read]
+  # argv must land in a file: _fc_fzf_read is called inside $(...) and a
+  # variable set in that subshell does not survive.
+  _fc_fzf_read() {
+    local n
+    n=$(<"$cnt")
+    n=$(( n + 1 ))
+    print -r -- "$n" >"$cnt"
+    print -r -- "$*" >>"$argf"
+    cat >/dev/null
+    case $n in
+      1) print -r -- $'alpha\t1.0' ;;
+      2) print -r -- 'go' ;;
+      *) return 130 ;;
+    esac
+  }
+  _t_p5_list() { printf 'alpha\t1.0\n' }
+  _t_p5_act() { : }
+  _FC_REG+=(
+    'p5:title'   'P5'
+    'p5:views'   'manage'
+    'p5:manage'  '_t_p5_list'
+    'p5:manage:title'   'P5 Manage'
+    'p5:manage:actions' 'go'
+    'p5:manage:cols'    'name have'
+    'p5:manage:fzf-opts' '--tiebreak=index --no-sort'
+    'p5:mutating' 'go'
+    'p5:fallback'   '_t_p5_act'
+  )
+
+  _fc_session p5 manage
+
+  t_sep "the argv the view's fzf-opts reach fzf with"
+  calls=("${(@f)$(<"$argf")}")
+  n=0
+  for line in "${calls[@]}"; do
+    (( n++ ))
+    print -r -- "  fzf#$n argv: [$line]"
+  done
+  # Call 1 is the package list, call 2 the action submenu. Only the list call
+  # carries the view's fzf-opts; the submenu goes through _fc_actions, which
+  # passes nothing and must stay that way.
+  if [[ ${calls[1]:-} == *'--tiebreak=index'* ]]; then
+    print -r -- '  OK   --tiebreak=index reached fzf'
+  else
+    bad=1
+    print -r -- '  *** error: --tiebreak=index did not reach fzf (fzf-opts was parsed and then unused) ***'
+  fi
+  if [[ ${calls[1]:-} == *'--no-sort'* ]]; then
+    print -r -- '  OK   --no-sort reached fzf'
+  else
+    bad=1
+    print -r -- '  *** error: --no-sort did not reach fzf ***'
+  fi
+  if [[ ${calls[1]:-} == *'--multi'* ]]; then
+    print -r -- '  OK   --multi is still there (the driver default was not squeezed out by fzf-opts)'
+  else
+    bad=1
+    print -r -- '  *** error: --multi is gone ***'
+  fi
+  if [[ ${calls[2]:-} == *'--no-sort'* ]]; then
+    bad=1
+    print -r -- '  *** error: the action submenu must not take the view fzf-opts ***'
+  else
+    print -r -- '  OK   the action submenu does not take fzf-opts'
+  fi
+  (( bad )) || print -r -- '  OK   every fzf-opts is in place'
+
+  t_sep "every fzf-opts declared in the registry has to be a legal flag"
+  # key / tok / toks are declared outside the loop: a scalar local in a loop
+  # body prints a NAME=value line to stdout, and this function's stdout is the
+  # content compared with the baseline character for character, so that line
+  # would become part of the baseline.
+  local key tok
+  local -a toks
+  for key in "${(@k)_FC_REG}"; do
+    [[ $key == *:fzf-opts ]] || continue
+    toks=(${(s: :)_FC_REG[$key]})
+    for tok in "${toks[@]}"; do
+      if [[ $tok == --* ]]; then
+        print -r -- "  OK   $key -> $tok"
+      else
+        bad=1
+        print -r -- "  *** error: the '$tok' of $key is not a flag ***"
+      fi
+    done
+  done
+
+  unfunction _fc_fzf_read _t_p5_list _t_p5_act
+  eval "_fc_fzf_read() { $functions[_t_read_orig] }"
+  unfunction _t_read_orig
+  for k in title views manage manage:title manage:actions manage:cols \
+           manage:fzf-opts mutating fallback; do
+    unset "_FC_REG[p5:$k]"
+  done
+  rm -f "$cnt" "$argf"
+}
+
+# 20. The README agrees with the code
+#     The README used to list a `uvf` that did not exist and a `registry` view
+#     that did not exist, leave out pinned / gemf / envf, and its dependency
+#     table mentioned only grep coreutils and gh jq. Documentation drift breaks
+#     nothing, so nobody notices -- except whoever goes looking for it on
+#     purpose. cargof / ffp are gone and fp has been renamed to pathf, so the
+#     lists in this case have to follow, or it takes "the docs mention a command
+#     that does not exist" for correct.
+#     uvf really was added later: the list here gained it, and with it the
+#     assertion about uvf further down, under "names that must not appear", was
+#     dropped -- that assertion existed because uvf really did not exist then.
 t_case_readme() {
   local R=$root/README.md
   if [[ ! -f $R ]]; then
-    print -r -- '  (没有 README.md，跳过)'
+    print -r -- '  (no README.md, skipped)'
     return 0
   fi
 
-  t_sep "公开命令：README 必须逐个收录，且不多不少"
+  t_sep "public commands: the README must list every one of them, no more and no fewer"
   local -a want
   want=(brewf npmf pnpmf pipf uvf gemf ghf pathf envf)
   local c
   for c in "${want[@]}"; do
     if grep -qF -- "\`$c\`" "$R"; then
-      print -r -- "  OK   收录了 $c"
+      print -r -- "  OK   $c is listed"
     else
-      print -r -- "  *** 错误：README 没收录 $c"
+      print -r -- "  *** error: the README does not list $c"
     fi
   done
-  # 反向：README 提到的命令名必须真的存在。
-  # 排除 fzf —— 它是项目名也是依赖名，不是本插件定义的命令。
+  # The other direction: a command name the README mentions has to exist.
+  # fzf is excluded -- it is the project name and a dependency name, not a
+  # command this plugin defines.
   local -a defined
   defined=(${(f)"$(grep -hoE '^[a-z][a-z0-9]*\(\)' "$root"/base.zsh "$root"/collections/*.zsh \
              | tr -d '()' | sort)"})
   for c in ${(f)"$(grep -oE '`[a-z]+f`' "$R" | tr -d '`' | sort -u)"}; do
     [[ $c == fzf ]] && continue
-    (( ${defined[(Ie)$c]} )) || print -r -- "  *** 错误：README 提到 $c，但代码里没有这个函数"
+    (( ${defined[(Ie)$c]} )) || print -r -- "  *** error: the README mentions $c, but there is no such function in the code"
   done
 
-  t_sep "view 列表：README 必须覆盖注册表里的全部 view，且不写多余的"
+  t_sep "the view list: the README must cover every view in the registry, and write nothing extra"
   local eco v line miss extra
   for eco in brew npm pnpm pip uv gem gh; do
     local -a vs
@@ -1213,7 +1817,7 @@ t_case_readme() {
     (( ${#vs} )) || continue
     line=$(grep -m1 "^\`${eco}f\`:" "$R")
     if [[ -z $line ]]; then
-      print -r -- "  *** 错误：README 缺 ${eco}f 的命令行"
+      print -r -- "  *** error: the README has no command line for ${eco}f"
       continue
     fi
     miss=""
@@ -1227,125 +1831,147 @@ t_case_readme() {
       (( ${vs[(Ie)$v]} )) || extra+=" $v"
     done
     if [[ -n $miss ]]; then
-      print -r -- "  *** 错误 ${eco}f 漏了 view:$miss"
+      print -r -- "  *** error ${eco}f is missing the view:$miss"
     elif [[ -n $extra ]]; then
-      print -r -- "  *** 错误 ${eco}f 写了不存在的 view:$extra"
+      print -r -- "  *** error ${eco}f writes a view that does not exist:$extra"
     else
       print -r -- "  OK   ${eco}f: ${(j: :)vs}"
     fi
   done
 
-  t_sep "不该出现的名字"
-  # 这里原来还断言 README 不得提到 uvf / fzf-uv —— 当初成立是因为 uvf 真的
-  # 不存在。uvf 加进来之后那两条前提就没了，而「README 提到的命令必须真的
-  # 存在」在上面那段反向检查里已经逐个查过（grep '`[a-z]+f`' 对 defined），
-  # 所以这里不必再维护一份手工名单。
+  t_sep "names that must not appear"
+  # This used to assert as well that the README must not mention uvf / fzf-uv --
+  # it held back then because uvf really did not exist. Once uvf was added those
+  # two premises were gone, and "a command the README mentions must really
+  # exist" is already checked one by one in the reverse check above (grep
+  # '`[a-z]+f`' against defined), so there is no need to keep a hand-written list
+  # of them here as well.
   if grep -qF '`registry`' "$R"; then
-    print -r -- '  *** 错误：README 提到 registry view，但注册表里没有'
+    print -r -- '  *** error: the README mentions the registry view, but the registry has none'
   else
-    print -r -- '  OK   不提 registry view'
+    print -r -- '  OK   it does not mention the registry view'
   fi
 
-  t_sep "默认模块列表"
-  # 两边都归一成「空格分隔、无首尾空格」再比，
-  # 否则尾随空格会伪装成不一致（踩过一次）。
+  t_sep "the default module list"
+  # Both sides are normalised into "space separated, no leading or trailing
+  # space" before comparing, otherwise trailing spaces disguise themselves as a
+  # mismatch (hit once).
   local real_mods readme_mods
   real_mods=$(print -l -- ${FZF_COLLECTION_MODULES} | tr '\n' ' ')
   readme_mods=$(sed -n '/^FZF_COLLECTION_MODULES=($/,/^  )$/p' "$R" \
                 | sed '1d;$d' | tr -d ' ' | tr '\n' ' ')
   real_mods=${real_mods%% }
   readme_mods=${readme_mods%% }
-  print -r -- "  代码:   [${real_mods}]"
+  print -r -- "  code:   [${real_mods}]"
   print -r -- "  README: [${readme_mods}]"
   if [[ $real_mods == $readme_mods ]]; then
-    print -r -- '  OK   一致'
+    print -r -- '  OK   they agree'
   else
-    print -r -- '  *** 错误：默认模块列表不一致'
+    print -r -- '  *** error: the default module lists differ'
   fi
 
-  t_sep "依赖：README 提到的必须真被调用，代码用到的必须被提到"
-  # 白名单必须穷举外部命令。之前的白名单漏了 curl，于是 pipf 的 search
-  # 靠 curl 抓 index 页面这件事两版依赖表都没写，也永远不会被这个检查抓到。
-  # 宁可多列几个候选（命中后再判断是不是真调用），也不能漏。
+  t_sep "dependencies: what the README mentions must really be called, and what the code uses must be mentioned"
+  # The whitelist has to exhaust the external commands. The earlier whitelist
+  # left out curl, so the fact that pipf's search fetches the index page with
+  # curl was in neither version of the dependency table, and this check would
+  # never have caught it. Better to list a few candidates too many (and only
+  # then decide whether the call is real) than to leave one out.
   #
-  # 用 grep -w 取词本身，不要用字符类切分 —— 那样会把 "brew:" 、"(find"
-  # 这种带分隔符的碎片当成词，报出一堆假的「代码用了 X」。
-  # head / tail 不单列：head 只跟 find 一起用；tail 在 gem 里是变量名。
-  # cut 是流式 search 路径的一部分（见 _fc_view_streamable），sed 是 pipf 抠 index 页
-  # 链接用的（87 万行，见 _pipf_list_available），两者都必须列进来。
-  # uv 放在最后：它是 alternation 里最短的一个，放前面会把 uvtool 之类也切进来
-  # （-w 挡得住大部分，但没必要依赖它）。
+  # Take the words themselves with grep -w, not by splitting on a character
+  # class -- the latter takes fragments carrying a separator, like "brew:" or
+  # "(find", for words, and reports a pile of bogus "the code uses X".
+  # head / tail are not listed separately: head is only used together with find;
+  # in gem, tail is a variable name. cut is part of the streaming search path
+  # (see _fc_view_streamable), and sed is what pipf uses to pick the links out of
+  # the index page (870k lines, see _pipf_list_available), so both have to be
+  # listed. uv goes last: it is the shortest one in the alternation, and putting
+  # it earlier also splits uvtool and the like out (-w blocks most of that, but
+  # there is no reason to rely on it).
   local -a used
   used=(${(u)${(s: :)$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh \
         | sed 's/[[:space:]]#.*$//' \
         | grep -howE 'all-the-package-names|pip-autoremove|brew|npm|pnpm|pip3?|gem|gh|jq|curl|find|git|grep|cut|sed|sort|uniq|printenv|less|open|dirname|uv' | tr 'A-Z' 'a-z' | sort -u)}})
   for c in "${used[@]}"; do
-    # 必须在**依赖表**里，即以 "| `" 开头的表格行。
-    # 之前只查「README 任意位置提过」，于是散文里顺口提一句就能蒙混过关 ——
-    # 注入测试证明过：把 curl 从表格里删掉、留在散文里，检查照样通过。
+    # It has to be in the **dependency table**, i.e. on a table row starting with
+    # "| `". This used to check only "the README mentions it somewhere", so a
+    # passing mention in the prose was enough to get by -- an injection test
+    # proved it: delete curl from the table and leave it in the prose, and the
+    # check still passes.
     if grep -E '^\| ' "$R" | grep -qF "$c"; then
       :
     else
-      print -r -- "  *** 错误：代码用了 $c，README 依赖表里没有"
+      print -r -- "  *** error: the code uses $c, and the README dependency table does not have it"
     fi
   done
-  print -r -- "  代码用到的 ${#used[@]} 个外部命令都已在依赖表中"
-  # perl / column 已彻底移除，README 不得再声称需要
+  print -r -- "  all ${#used[@]} external commands used by the code are in the dependency table"
+  # perl / column are gone for good, the README must not claim them
   for c in perl column; do
     n=$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh | grep -cE "\b$c\b")
     if (( n == 0 )) && grep -qiE "install.*\b$c\b|\b$c\b.*install" "$R"; then
-      print -r -- "  *** 错误：README 仍声称需要 $c，但代码已不再调用它"
+      print -r -- "  *** error: the README still claims $c is needed, but the code no longer calls it"
     else
-      print -r -- "  OK   $c 在代码中 $n 次调用，README 未声称需要"
+      print -r -- "  OK   the code calls $c $n times, the README does not claim it is needed"
     fi
   done
 
-  t_sep "可配置项：代码里每个可覆盖的变量都必须在 README 里有，且名字一致"
-  # 双向核对。以前只查 _ENVF_VALMAX 一个方向，_FC_COLUMN_GAP 就漏了。
+  t_sep "tunables: every overridable variable in the code must be in the README, with the same name"
+  # Checked in both directions. This used to check only the _ENVF_VALMAX
+  # direction, so _FC_COLUMN_GAP slipped through.
   #
-  # 必须先剔掉整行注释。这道门原来直接扫全文，于是注释里写一个
-  # ${_ENV_VAR:-$_FC_...} 当示例，就凭空多出一个「可覆盖项」，然后要求
-  # README 里有它的文档 —— 变量是假的，门却是真的。依赖那道门一直有
-  # `grep -hvE '^\s*#'`，这道没有。只剔整行注释、不动行尾注释：剔行尾会把
-  # `"... # ..."` 这种字符串里的 # 当注释，砍掉后面可能存在的真实可覆盖项，
-  # 而漏报比误报更难发现。
+  # Whole-line comments have to be removed first. This gate used to scan the
+  # whole file, so writing a lowercase example of the same shape in a comment
+  # conjured up an extra "tunable" out of thin air and then demanded that the
+  # README document it -- the variable is fake, the gate is real. The dependency
+  # gate has always had `grep -hvE '^\s*#'`, this one did not. Only whole-line
+  # comments are removed, trailing ones are left alone: removing a trailing
+  # comment would treat the # inside a string like `... # ...` as the start of a
+  # comment and cut away a real tunable that may follow, and a missed report is
+  # harder to notice than a false one.
   local -a tunable
   tunable=(${(u)${(s: :)$(grep -hvE '^\s*#' "$root"/base.zsh "$root"/collections/*.zsh \
           | grep -hoE '\$\{[A-Z_][A-Z0-9_]*:-' \
           | sed 's/\${//;s/:-//')}})
-  # PAGER 是通用环境变量，不算插件自己的可配置项
+  # General environment variables are not the plugin's own tunables. EDITOR /
+  # VISUAL appear in the ${VISUAL:-${EDITOR:-vi}} fallback in _brewf_edit (a bare
+  # $EDITOR errors under nounset when it is unset); the user's shell environment
+  # provides them, and the README only mentions them in the dependency table.
   tunable=(${tunable:#PAGER})
+  tunable=(${tunable:#EDITOR})
+  tunable=(${tunable:#VISUAL})
   local vname
   for vname in "${tunable[@]}"; do
     if grep -qF "$vname" "$R"; then
-      print -r -- "  OK   $vname 有文档"
+      print -r -- "  OK   $vname is documented"
     else
-      print -r -- "  *** 错误：代码可覆盖 $vname，README 没有"
+      print -r -- "  *** error: the code can override $vname, the README does not have it"
     fi
   done
-  print -r -- "  代码里可覆盖的插件变量共 ${#tunable[@]} 个：${(j: :)tunable}"
+  print -r -- "  ${#tunable[@]} plugin variables the code can override: ${(j: :)tunable}"
 
-  t_sep "默认值集中在 base.zsh：README 必须写常量名，不能抄一份字面量"
-  # 上面那道门只保证「环境变量名在 README 里出现过」。它不管 README 说的默认值
-  # 是不是真的 —— 有人改了 _FC_ENVF_WIDTH，README 里的 80 会一直躺在那里。
-  # 所以每个可覆盖项都要在 README 里指出它落到哪个常量。
+  t_sep "the defaults live in base.zsh: the README must name the constants, not copy a literal"
+  # The gate above only guarantees that the environment variable name appears
+  # somewhere in the README. It does not care whether the default the README
+  # quotes is the real one -- someone changes _FC_ENVF_WIDTH and the 80 in the
+  # README just sits there. So every tunable has to say in the README which
+  # constant it lands in.
   local -a dflt
   dflt=(_FC_ENVF_WIDTH _FC_PYPI_INDEX _FC_PYPI_JSON_BASE)
   local dname
   for dname in "${dflt[@]}"; do
     if grep -qF "$dname" "$R"; then
-      print -r -- "  OK   $dname 有文档"
+      print -r -- "  OK   $dname is documented"
     else
-      print -r -- "  *** 错误：代码把默认值放在 $dname，README 没提它 ***"
+      print -r -- "  *** error: the code puts the default in $dname, the README does not mention it ***"
     fi
   done
 
-  t_sep "clone 地址必须指向本仓库，不能是上游"
-  # 之前一直写的是上游 liuyinz 的地址，照抄会克隆错仓库。
+  t_sep "the clone address must point at this repository, not at upstream"
+  # It used to be the address of upstream liuyinz, and copying it verbatim
+  # clones the wrong repository.
   local remote
   remote=$(cd "$root" && git remote get-url origin 2>/dev/null)
   if [[ -z $remote ]]; then
-    print -r -- '  (没有 origin remote，跳过)'
+    print -r -- '  (no origin remote, skipped)'
   else
     remote=${remote%.git}
     remote=${remote#https://}
@@ -1353,18 +1979,19 @@ t_case_readme() {
     remote=${remote/:/\/}
     print -r -- "  origin = ${remote}"
     if grep -qF "https://${remote}" "$R"; then
-      print -r -- '  OK   README 的 clone 地址与 origin 一致'
+      print -r -- '  OK   the clone address in the README agrees with origin'
     else
-      print -r -- '  *** 错误：README 的 clone 地址与 origin 不一致'
+      print -r -- '  *** error: the clone address in the README differs from origin'
       grep -oE 'https://github.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+' "$R" \
-        | sort -u | sed 's/^/        README 里的: /'
+        | sort -u | sed 's/^/        in the README: /'
     fi
   fi
 
-  t_sep "jq：README 声称的用法必须与代码一致"
-  # 事实：brew 不用 jq（只有注释里提到）；gem 完全不用；
-  # gh 用的是 gh api --jq（内置，不需要外部二进制）；
-  # npm / pnpm / pip 的 outdated 与 manage 需要外部 jq，search 反而不用。
+  t_sep "jq: the usage the README claims must agree with the code"
+  # The facts: brew does not use jq (only a comment mentions it); gem does not
+  # use it at all; gh uses gh api --jq (built in, needs no external binary);
+  # outdated and manage for npm / pnpm / pip need an external jq, while search
+  # does not.
   local eco2 fn2 f2 v2 row
   for eco2 in brew gem; do
     for v2 in ${(s: :)${_FC_REG[$eco2:views]}}; do
@@ -1373,51 +2000,56 @@ t_case_readme() {
       f2=$(grep -l "^${fn2}()" "$root"/collections/*.zsh 2>/dev/null | head -1)
       [[ -z $f2 ]] && continue
       if sed -n "/^${fn2}()/,/^}/p" "$f2" | grep -vE '^\s*#' | grep -qE '\| jq -r'; then
-        print -r -- "  *** 错误：$eco2/$v2 用了外部 jq，README 声称 $eco2 不需要"
+        print -r -- "  *** error: $eco2/$v2 uses an external jq, the README claims $eco2 does not need one"
       fi
     done
-    print -r -- "  OK   $eco2 的 view 数据源确实不用外部 jq"
+    print -r -- "  OK   the data sources of the $eco2 views really do not use an external jq"
   done
-  # 反向：npm / pnpm / pip 的 outdated 真的用 jq，README 必须列出 jq
+  # The other direction: outdated for npm / pnpm / pip really does use jq, so
+  # the README must list jq
   for eco2 in npm pnpm pip; do
     fn2=${_FC_REG[$eco2:outdated]}
     f2=$(grep -l "^${fn2}()" "$root"/collections/*.zsh 2>/dev/null | head -1)
     if [[ -z $f2 ]] || ! sed -n "/^${fn2}()/,/^}/p" "$f2" | grep -vE '^\s*#' | grep -qE '\| jq -r'; then
-      print -r -- "  *** 错误：$eco2 的 outdated 不再需要 jq，README 却列着"
+      print -r -- "  *** error: outdated of $eco2 no longer needs jq, yet the README lists it"
       continue
     fi
-    # README 的依赖表里 $eco2f 那一行必须含 jq。
-    # npmf 与 pnpmf 合并成一行（`| `npmf`, `pnpmf` | ...`），所以不能只匹配行首。
+    # The $eco2f row of the README's dependency table must contain jq.
+    # npmf and pnpmf are merged into one row (`| `npmf`, `pnpmf` | ...`), so the
+    # start of the line cannot be the only thing matched.
     row=$(grep -F "\`${eco2}f\`" "$R" | grep '^|' | head -1)
     if [[ -n $row ]] && print -r -- "$row" | grep -q 'jq'; then
-      print -r -- "  OK   $eco2 的 outdated 用 jq，README 也列了"
+      print -r -- "  OK   outdated of $eco2 uses jq, and the README lists it"
     else
-      print -r -- "  *** 错误：$eco2 的 outdated 用 jq，但 README 依赖表没列"
-      print -r -- "        找到的行: ${row:-（无）}"
+      print -r -- "  *** error: outdated of $eco2 uses jq, but the README dependency table does not list it"
+      print -r -- "        the row that was found: ${row:-(none)}"
     fi
   done
 
-  t_sep "FZF_COLLECTION_OPTS 必须与 _FC_OPTS 逐项一致"
+  t_sep "FZF_COLLECTION_OPTS must agree with _FC_OPTS item for item"
   local inreadme inopts
   inreadme=$(sed -n '/^  FZF_COLLECTION_OPTS="/,/"/p' "$R" | grep -oE '^\s+--[a-z-]+' | tr -d ' ' | sort)
   inopts=$(print -l -- ${_FC_OPTS} | grep -oE '^--[a-z-]+' | sort)
   if [[ $inreadme == $inopts ]]; then
-    print -r -- '  OK   一致'
+    print -r -- '  OK   they agree'
   else
-    print -r -- '  *** 错误：与代码里的 _FC_OPTS 不一致'
+    print -r -- '  *** error: it differs from _FC_OPTS in the code'
     print -r -- "      README:  ${(j: :)inreadme}"
     print -r -- "      _FC_OPTS: ${(j: :)inopts}"
   fi
 }
 
-# ---- 用例隔离 ----
+# ---- case isolation ----
 #
-# 逐个用例快照插件全局再恢复。少了这一层，某个用例清了 _FC_OPTS 就会让后面
-# 全部在空 opts 下运行，而 t_case_readme 那道一致性门会把「*** 错误」打进
-# baseline —— 基线只记录文本，分不出「正确」与「每次都一样地错」。
+# Snapshot the plugin globals before each case and restore them afterwards.
+# Without this layer, one case clearing _FC_OPTS makes every case after it run
+# with empty opts, and the consistency gate in t_case_readme writes "*** error"
+# into the baseline -- and the baseline only records text, it cannot tell
+# "correct" from "wrong the same way every time".
 #
-# 比「记得在用例里清理」可靠：漏掉的不是一次污染，而是几屏之外的一个假失败。
-# **新增插件全局时必须在这里加一行。**
+# More reliable than "remember to clean up in the case": what gets left out is
+# not one leaked variable but a false failure several screens away. **When adding
+# a plugin global, add a line here.**
 
 typeset -ga _T_OPTS _T_ROWS _T_FIELDS _T_STREAM _T_ACTIONS _T_MUTATING
 typeset -ga _T_PICKED _T_DONE _T_FAILED
@@ -1430,19 +2062,26 @@ _t_snapshot() {
   _T_ROWS=("${_FC_ROWS[@]}")
   _T_FIELDS=("${_FC_FIELDS[@]}")
   _T_STREAM=$_FC_STREAM
-  _T_ACTIONS=("${_FC_ACTIONS[@]}")
-  _T_MUTATING=("${_FC_MUTATING[@]}")
-  _T_PICKED=("${_FC_PICKED[@]}")
-  _T_DONE=("${_FC_DONE[@]}")
-  _T_FAILED=("${_FC_FAILED[@]}")
+  # The right-hand side still carries ${arr[@]:-} everywhere: base.zsh now
+  # declares these arrays at the top level, but the :- costs nothing, and it
+  # makes this function safe even when the plugin's globals do not exist yet
+  # (tests/cases.sh can be sourced on its own, without the plugin). With the
+  # :- added, a reference expansion contributes zero elements when the array
+  # does not exist, which means the same as "an empty array".
+  _T_ACTIONS=("${_FC_ACTIONS[@]:-}")
+  _T_MUTATING=("${_FC_MUTATING[@]:-}")
+  _T_PICKED=("${_FC_PICKED[@]:-}")
+  _T_DONE=("${_FC_DONE[@]:-}")
+  _T_FAILED=("${_FC_FAILED[@]:-}")
   _T_PENDING=$_FC_PENDING
   _T_RC=$_FC_RC
   _T_COLOR=$_FC_COLOR
   _T_SGR_WARNED=$_FC_SGR_WARNED
   _T_SGR_PREFIX=$_FC_SGR_PREFIX
   _T_HEADER=$_FC_HEADER
-  # 整个注册表一起存：逐个 fixture 键登记的话，漏掉一个键就是漏掉一次污染。
-  # 代价是每个用例复制一次几百个键，可以接受。
+  # The whole registry is stored in one go: registering the fixture keys one by
+  # one means leaving one key out is one missed leak. The price is copying
+  # several hundred keys per case, which is acceptable.
   _T_REG=("${(@kv)_FC_REG}")
 }
 
@@ -1467,8 +2106,10 @@ _t_restore() {
 
 t_run_all() {
   local c
-  # 用例清单是数据：加一个用例只加一行，不必记得包 snapshot/restore。
-  # 以前这里是 25 个直接调用，加用例的人很容易只加调用不加工具。
+  # The list of cases is data: adding a case adds one line, and there is no need
+  # to remember to wrap it in snapshot/restore. This used to be 25 direct calls,
+  # and it was easy for whoever added a case to add only the call and not the
+  # harness.
   local -a cases
   cases=(
     t_case_rule
@@ -1478,7 +2119,7 @@ t_run_all() {
     t_case_split_row
     t_case_loop
     t_case_render
-    t_case_drop_row
+    t_case_drop_rows
     t_case_membership
     t_case_reg_get
     t_case_coexist
@@ -1494,6 +2135,9 @@ t_run_all() {
     t_case_envf_width
     t_case_uvf_rows
     t_case_palette
+    t_case_entry_params
+    t_case_requires
+    t_case_fzf_opts
     t_case_readme
   )
   for c in "${cases[@]}"; do

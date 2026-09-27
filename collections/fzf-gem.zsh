@@ -1,10 +1,12 @@
 #!/usr/bin/env zsh
-# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
+# Library file, sourced by fzf-collection.plugin.zsh. No top-level entry point;
+# mode 100644.
 
-# 从 `gem info <name>` 的缩进输出里取一个字段，输出形如
+# Pull one field out of the indented output of `gem info <name>`, shaped like
 #   bigdecimal (1.4.1)
 #       Homepage: https://...
-# 整行含 "<字段>: " 才命中，取冒号后的内容并剥掉残留空白。
+# A line only matches when it contains "<field>: ", so take what is after the
+# colon and strip the leftover whitespace.
 _gemf_extract() {
   local line
   gem info "$1" --exact --prerelease 2>/dev/null | while IFS= read -r line; do
@@ -16,10 +18,11 @@ _gemf_extract() {
   done
 }
 
-# ---- 列表查询：输出 name<TAB>rest ----
+# ---- List queries: emit name<TAB>rest ----
 
-# `gem info --prerelease` 每行是 `name (1.0.0, 2.0.0.pre)`，多个已装版本
-# 用 `, ` 分隔；这里换成 `|`，与 brew 展示多版本的方式一致。
+# Each `gem info --prerelease` line is `name (1.0.0, 2.0.0.pre)`; several
+# installed versions are separated by `, `. Swap that for `|` so multiple
+# versions are shown the same way brew shows them.
 _gemf_list_installed() {
   local line name vers
   gem info --prerelease | while IFS= read -r line; do
@@ -31,8 +34,9 @@ _gemf_list_installed() {
   done
 }
 
-# `gem outdated` 每行是 `name (1.0.0) < 2.0.0, 3.0.0`。去掉括号后按空白切，
-# 末段保留 gem 自己的 `< 2.0.0` 记法，`=>` 由显示层给出。
+# Each `gem outdated` line is `name (1.0.0) < 2.0.0, 3.0.0`. Strip the parens
+# and split on whitespace; the last field keeps gem's own `< 2.0.0` notation,
+# and the display layer supplies the `=>`.
 _gemf_list_outdated() {
   local line name rest cur tail
   gem outdated | while IFS= read -r line; do
@@ -49,23 +53,26 @@ _gemf_list_available() {
   gem search --remote --no-versions
 }
 
-# ---- 版本相关：显式收参 ----
+# ---- Versions: every argument taken explicitly ----
 
-# 所有版本（含未安装的），每行一个。`gem search X --all --remote --exact` 每行是
+# Every version, installed or not, one per line. Each
+# `gem search X --all --remote --exact` line is
 #   json (3.0.2 ruby java, 3.0.1 ruby java, ...)
-# 取括号里那段再按 `, ` 拆行。
+# so take the part inside the parens and split that on `, `.
 _gemf_version_list() {
   local line s
   gem search "$1" --all --remote --exact 2>/dev/null | while IFS= read -r line; do
     [[ $line == *'('*')' ]] || continue
     s=${line##*\(}
     s=${s%\)}
-    # 换行走变量：${s//, /$'\n'} 里的 $'\n' 不会被求值
+    # Splice the newline in through a variable: the $'\n' inside ${s//, /$'\n'}
+    # is not evaluated
     print -r -- "${s//, /$_FC_NL}"
   done
 }
 
-# 已安装的最新版本：取 `name (v1, v2)` 括号里逗号（或右括号）之前的部分
+# The newest installed version: from `name (v1, v2)`, take everything before the
+# first comma (or the closing paren) inside the parens
 _gemf_version_current() {
   local line s
   gem info "$1" --exact --prerelease 2>/dev/null | while IFS= read -r line; do
@@ -76,8 +83,10 @@ _gemf_version_current() {
   done
 }
 
-# $1=pkg $2=目标版本 $3=回滚前的版本。gem 允许多版本共存，升级只需装新版本，
-# 但回滚必须先卸掉当前那个，否则 gem 会认为目标版本已安装而跳过。
+# $1=pkg $2=target version $3=version from before the rollback. gem lets several
+# versions coexist, so an upgrade only has to install the new one, but a
+# rollback must first uninstall the current one — otherwise gem sees the
+# target version as already installed and skips it.
 _gemf_version_install() {
   local dir
   print -r -- "Install $1@$2"
@@ -88,7 +97,7 @@ _gemf_version_install() {
   gem install "$1" --version "$2" 2>/dev/null
 }
 
-# ---- 动作适配器 ----
+# ---- Action adapters ----
 
 _gemf_rollback() { _fc_rollback gem "$1" }
 
@@ -96,10 +105,12 @@ _gemf_info() { gem info "$1" | _fc_pager }
 _gemf_deps() { gem dependency "^$1\$" --prerelease }
 _gemf_homepage() { _fc_homepage "$(_gemf_extract "$1" Homepage)" }
 
-# 改动类动作各自补上 gem 需要的 flag，只读与未知动作直接透传。
+# Each mutating action adds the flags gem needs; read-only and unknown actions
+# are passed straight through.
 _gemf_act() {
   case $1 in
-    # 没有 update 分支：动作名是 upgrade，update 落到 *) 也仍是 gem update。
+    # No update branch: the action name is upgrade, and update falling through
+    # to *) still runs gem update.
     upgrade)    gem update "$2" --prerelease --minimal-deps ;;
     uninstall)  gem uninstall "$2" --all --executables ;;
     install)    gem install "$2" --prerelease ;;
@@ -107,12 +118,14 @@ _gemf_act() {
   esac
 }
 
-# ---- 注册表 ----
+# ---- Registry ----
 
-# 分隔符用 base.zsh 的 _FC_TAB / _FC_NL，collection 里不声明全局。
+# The separators are base.zsh's _FC_TAB / _FC_NL; a collection never declares
+# globals of its own.
 
 _FC_REG+=(
   'gem:title'   'Gem'
+  'gem:requires' 'gem'
   'gem:views'   'outdated search manage'
   'gem:fallback'  '_gemf_act'
 
@@ -124,8 +137,10 @@ _FC_REG+=(
 
   'gem:search'         '_gemf_list_available'
   'gem:search:title'   'Gem Search'
-  # search 列的是**还没装**的 gem，uninstall 在这里没有意义，入口只留在 manage。
-  # 因此本视图没有可达的 mutating 动作，走流式路径（见 base.zsh 的 _fc_view_streamable）。
+  # search lists the gems that are **not** installed yet, so uninstall means
+  # nothing here and the entry only lives in manage. That leaves this view with
+  # no reachable mutating action, so it takes the streaming path (see
+  # _fc_view_streamable in base.zsh).
   'gem:search:actions' 'install rollback'
   'gem:search:cols'    'name'
 
@@ -134,10 +149,12 @@ _FC_REG+=(
   'gem:manage:actions' 'uninstall rollback homepage deps info'
   'gem:manage:cols'    'name have'
 
-  # 移出列表的动作。rollback 不删行、只回列表，所以不在这里。
+  # Actions that drop the row out of the list. rollback deletes no row and only
+  # returns to the list, so it is not here.
   'gem:mutating'           'uninstall'
   'gem:outdated:mutating'  'upgrade uninstall'
-  # 留在动作菜单里的动作：装完可以接着对同一批包做别的事
+  # Actions that stay in the action menu: once installed you can carry straight
+  # on with the same batch of packages
   'gem:stay'          'install homepage deps info'
 
   'gem:rollback'  '_gemf_rollback'
@@ -151,5 +168,4 @@ _FC_REG+=(
 
 gemf() {
   _fc_cmd gem
-  gem cleanup &>/dev/null
 }

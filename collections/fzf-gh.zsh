@@ -1,9 +1,10 @@
 #!/usr/bin/env zsh
-# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
+# Library file, sourced by fzf-collection.plugin.zsh. No top-level entry point;
+# mode 100644.
 
-# ---- 列表查询：输出 name<TAB>rest ----
+# ---- List queries: emit name<TAB>rest ----
 
-# 整个 session 只查一次：动作菜单会被反复打开。
+# Query it once per whole session: the action menu is reopened over and over.
 typeset -g _GHF_USER
 
 _ghf_user() {
@@ -15,9 +16,10 @@ _ghf_list_repos() {
   gh api "users/$(_ghf_user)/repos" --paginate --jq '.[].name'
 }
 
-# ---- 动作适配器 ----
+# ---- Action adapters ----
 
-# gh 不是包管理器，没有 rollback / info / deps；仓库详情由 `gh repo view` 自取。
+# gh is not a package manager: no rollback / info / deps, and the repository
+# detail is fetched on its own by `gh repo view`.
 _ghf_act() {
   case $1 in
     delete-repo) gh delete-repo "$(_ghf_user)/$2" ;;
@@ -26,10 +28,11 @@ _ghf_act() {
   esac
 }
 
-# ---- 注册表 ----
+# ---- Registry ----
 
 _FC_REG+=(
   'gh:title'  'Gh'
+  'gh:requires' 'gh'
   'gh:views'  'repos'
   'gh:fallback' '_ghf_act'
 
@@ -38,11 +41,15 @@ _FC_REG+=(
   'gh:repos:actions' 'delete-repo browse'
   'gh:repos:cols'    'name'
 
-  # 不声明 stay：browse 之后要回列表，不该留在动作菜单里。
+  # No stay key: after browse you go back to the list, so it should not
+  # linger in the action menu.
   'gh:mutating' 'delete-repo'
 )
 
-# 没有 view 菜单，直接进列表。
+# No view menu; go straight to the list. That also means this bypasses
+# _fc_cmd, and with it the requirement check every other entry goes through, so
+# ghf has to ask for itself.
 ghf() {
+  _fc_require gh || return 0
   _fc_session gh repos
 }

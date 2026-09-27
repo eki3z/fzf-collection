@@ -1,11 +1,12 @@
 #!/usr/bin/env zsh
-# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
+# Library file, sourced by fzf-collection.plugin.zsh. No top-level entry point;
+# mode 100644.
 
 _pnpmf() {
   pnpm "$1" --global "${@:2}"
 }
 
-# ---- 列表查询：输出 name<TAB>rest ----
+# ---- List queries: emit name<TAB>rest ----
 
 _pnpmf_list_outdated() {
   _pnpmf outdated --json \
@@ -21,7 +22,7 @@ _pnpmf_list_available() {
   all-the-package-names
 }
 
-# ---- 版本相关：显式收参 ----
+# ---- Versions: every argument taken explicitly ----
 
 _pnpmf_version_list() {
   pnpm info "$1" versions --json 2>/dev/null | jq -r 'reverse | .[]' 2>/dev/null
@@ -36,12 +37,14 @@ _pnpmf_version_install() {
   _pnpmf add "$1@$2" 2>/dev/null
 }
 
-# ---- 动作适配器 ----
+# ---- Action adapters ----
 
-# 改动类动作走 _pnpmf（带 --global）；只读与未知动作走原生 pnpm。
+# Mutating actions go through _pnpmf, which adds --global; read-only and
+# unknown actions call plain pnpm.
 _pnpmf_act() {
   case $1 in
-    # pnpm update 默认不会跨大版本升，需显式 --latest
+    # pnpm update does not cross major versions by default, so --latest has
+    # to be passed explicitly.
     # SEE https://github.com/pnpm/pnpm/issues/5365#issuecomment-1252398786
     update)  print -r -- "update $2"; _pnpmf update --latest "$2" ;;
     remove | add)                  _pnpmf "$1" "$2" ;;
@@ -54,10 +57,11 @@ _pnpmf_deps() { pnpm view "$1" dependencies }
 _pnpmf_homepage() { _fc_homepage "$(pnpm view "$1" homepage)" }
 _pnpmf_rollback() { _fc_rollback pnpm "$1" }
 
-# ---- 注册表 ----
+# ---- Registry ----
 
 _FC_REG+=(
   'pnpm:title'          'Pnpm'
+  'pnpm:requires'       'pnpm all-the-package-names'
   'pnpm:views'          'outdated search manage'
   'pnpm:fallback'         '_pnpmf_act'
 
@@ -92,10 +96,5 @@ _FC_REG+=(
 )
 
 pnpmf() {
-  # REQUIRE pnpm add -g all-the-package-names
-  if ! _fc_have_cmd all-the-package-names; then
-    print -r -- 'Error! please run "pnpm add -g all-the-package-names" first!'
-    return 0
-  fi
   _fc_cmd pnpm
 }

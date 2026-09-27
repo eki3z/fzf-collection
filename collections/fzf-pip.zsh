@@ -1,13 +1,14 @@
 #!/usr/bin/env zsh
-# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
+# Library file, sourced by fzf-collection.plugin.zsh. No top-level entry point;
+# mode 100644.
 
 _pipf() {
   pip3 --disable-pip-version-check "$@"
 }
 
-# ---- 列表查询：输出 name<TAB>rest ----
+# ---- List queries: emit name<TAB>rest ----
 
-# `pip list --format=json` 每项是 {"name": ..., "version": ...}。
+# Each entry of `pip list --format=json` is {"name": ..., "version": ...}.
 _pipf_list_installed() {
   _pipf list --format=json | jq -r '.[] | "\(.name)\t\(.version)"'
 }
@@ -17,22 +18,25 @@ _pipf_list_outdated() {
     | jq -r '.[] | "\(.name)\t\(.version)\t=>\t\(.latest_version)"'
 }
 
-# 从 pip index 页面抠包名。
+# Scrapes package names out of the pip index page.
 _pipf_list_available() {
-  # 整条链必须留在 C 程序里：index 页有 87 万行，grep -o + sed 约 0.9s。
-  # grep -o 把一行里的每个锚点分别打出来，等价于「一次吐一个」；贪婪匹配的
-  # sed 一行只能吐最后一个，所以必须先靠 grep -o 把每个锚点切开。
+  # The whole chain has to stay inside C programs: the index page has 870k
+  # lines, and grep -o + sed takes about 0.9s.
+  # grep -o prints each anchor of a line separately, which is the same as
+  # "emit one at a time"; a greedy sed can only emit the last one per line, so
+  # grep -o has to cut every anchor apart first.
   curl -s "$(pip config get global.index-url)/" \
     | grep -o '>[^<]*</a>' \
     | sed -e 's/^>//' -e 's|</a>$||'
 }
 
-# ---- pip show 字段提取（显式收参） ----
+# ---- pip show field extraction (explicit args) ----
 
-# 从 `pip show` 的输出里取字段，每行一个 `Key: value`，例如
+# Pull one field out of the `pip show` output, one `Key: value` per line, e.g.
 #   Home-page: https://requests.readthedocs.io
 #   Requires: certifi, idna, urllib3
-# 整行含 "<key>: " 才命中，取冒号后的内容并剥掉残留空白。
+# Only a line containing "<key>: " matches; take what follows the colon and
+# strip the leftover whitespace.
 _pipf_extract() {
   local line
   _pipf show "$1" 2>/dev/null | while IFS= read -r line; do
@@ -44,14 +48,15 @@ _pipf_extract() {
   done
 }
 
-# ---- 版本相关：显式收参 ----
+# ---- Versions: every argument taken explicitly ----
 
 _pipf_version_list() {
   local line s
   _pipf index versions --pre "$1" 2>/dev/null | while IFS= read -r line; do
     [[ $line == *'Available versions: '* ]] || continue
     s=${line#*'Available versions: '}
-    # 换行走 _FC_NL 变量：替换位里的 $'\n' 不求值，会原样输出这四个字符。
+    # Newlines go through the _FC_NL variable: a $'\n' in the replacement is
+    # not evaluated, so it would print those four characters verbatim.
     print -r -- "${s//, /$_FC_NL}"
     break
   done
@@ -65,7 +70,7 @@ _pipf_version_install() {
   _pipf install --user --upgrade --force-reinstall "$1==$2" 2>/dev/null
 }
 
-# ---- 动作适配器 ----
+# ---- Action adapters ----
 
 _pipf_install() {
   _pipf install --user "$@"
@@ -76,7 +81,7 @@ _pipf_uninstall() {
     print -r -- "Package [pip] can not be uninstalled !"
     return 1
   fi
-  # 需要 pip install pip-autoremove。
+  # Needs `pip install pip-autoremove` first.
   if _fc_have_cmd pip-autoremove && [[ $1 != pip-autoremove ]]; then
     pip-autoremove "$1" --yes
   else
@@ -99,12 +104,13 @@ _pipf_use() { _pipf_extract "$1" Required-by }
 _pipf_homepage() { _fc_homepage "$(_pipf_extract "$1" Home-page)" }
 _pipf_rollback() { _fc_rollback pip "$1" }
 
-# ---- 注册表 ----
+# ---- Registry ----
 
-# 换行用 base.zsh 的 _FC_NL，collection 里不声明全局。
+# Newlines use _FC_NL from base.zsh; the collection declares no global.
 
 _FC_REG+=(
   'pip:title'          'Pip'
+  'pip:requires'       'pip3|pip'
   'pip:views'          'outdated search manage'
   'pip:fallback'         '_pipf_act'
 
@@ -116,8 +122,10 @@ _FC_REG+=(
 
   'pip:search'         '_pipf_list_available'
   'pip:search:title'   'Pip Search'
-  # search 列的是**还没装**的包，uninstall 在这里没有意义，入口只留在 manage。
-  # 因此本视图没有可达的 mutating 动作，走流式路径（见 base.zsh 的 _fc_view_streamable）。
+  # search lists packages that are **not installed yet**, so uninstall means
+  # nothing here; its entry point stays in manage only.
+  # Therefore this view has no reachable mutating action and takes the
+  # streaming path (see _fc_view_streamable in base.zsh).
   'pip:search:actions' 'install rollback'
   'pip:search:cols'    'name'
 

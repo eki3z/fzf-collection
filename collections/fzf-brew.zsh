@@ -1,18 +1,21 @@
 #!/usr/bin/env zsh
-# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
+# Library file, sourced by fzf-collection.plugin.zsh. No top-level entry point;
+# mode 100644.
 
 # SEE https://gist.github.com/steakknife/8294792
 
 _brewf() {
-  # HOMEBREW_NO_INSTALL_FROM_API=1 关掉 API，brew 全部读本地 tap。
+  # HOMEBREW_NO_INSTALL_FROM_API=1 turns off the API, so brew reads the local
+  # tap.
   brew "$@"
 }
 
-# ---- 列表查询：输出 name<TAB>rest ----
+# ---- List queries: emit name<TAB>rest ----
 
-# `brew outdated --verbose` 每行形如
+# Each `brew outdated --verbose` line looks like
 #   git (2.30.1) < 2.35.1, 2.36.0 [pinned at 2.30.1]
-# 去掉括号、`, ` 换成 `|` 之后按空白切，第 4 段是全部可升级版本。
+# Strip the parens, turn `, ` into `|`, then split on whitespace: field 4 holds
+# every version we can upgrade to.
 _brewf_list_outdated() {
   local line name
   local -a f
@@ -27,7 +30,8 @@ _brewf_list_outdated() {
   done
 }
 
-# `brew list --versions` 每行是 `name 1.2 3.4`，多版本用 `|` 连起来。
+# Each `brew list --versions` line is `name 1.2 3.4`; several versions are
+# joined with `|`.
 _brewf_list_installed() {
   local line
   local -a f
@@ -38,7 +42,7 @@ _brewf_list_installed() {
   done
 }
 
-# `brew ls --pinned --versions` 与 list --versions 同形。
+# `brew ls --pinned --versions` has the same shape as list --versions.
 _brewf_list_pinned() {
   local line
   local -a f
@@ -56,12 +60,14 @@ _brewf_list_available() {
 
 _brewf_list_tap() { brew tap }
 
-# ---- 回滚 ----
-# 不用通用 _fc_rollback：它要先定位 formula 所在的 tap 目录才能对单个文件做
-# git checkout，目录由包名推导，所以这层自带；也因此不注册 versions /
-# current / install 三个键。
+# ---- Rollback ----
+# The generic _fc_rollback is not used here: it first has to locate the tap
+# directory that holds the formula before it can `git checkout` the single file,
+# and that directory is derived from the package name, so this layer brings its
+# own. For the same reason the three keys versions / current / install are not
+# registered.
 
-_brewf_brewdir() {           # $1=pkg -> formula 所在目录
+_brewf_brewdir() {           # $1=pkg -> directory holding the formula
   local f=$1.rb
   dirname "$(find "$(brew --repository)" -name "$f" | head -n 1)"
 }
@@ -80,7 +86,7 @@ _brewf_version_current() {   # $1=pkg
   return 0
 }
 
-_brewf_version_list() {      # $1=pkg -> git log，每行 `hash subject`
+_brewf_version_list() {      # $1=pkg -> git log, one `hash subject` per line
   local dir
   dir=$(_brewf_brewdir "$1")
   [[ -n $dir ]] || return 0
@@ -98,7 +104,7 @@ _brewf_is_pinned() {         # $1=pkg
   return 1
 }
 
-# $1=pkg $2=目标 commit $3=回滚前的版本
+# $1=pkg $2=target commit $3=version from before the rollback
 _brewf_checkout() {
   local dir
   dir=$(_brewf_brewdir "$1")
@@ -106,14 +112,16 @@ _brewf_checkout() {
   git -C "$dir" checkout "$2" "$1.rb"
   (HOMEBREW_NO_AUTO_UPDATE=1 && brew reinstall "$1")
   git -C "$dir" checkout HEAD "$1.rb"
-  # 回滚前是 pinned 就重新 pin —— 看实际状态，不看从哪个视图进来。
+  # Pinned before the rollback? Pin it again — look at the real state, not at
+  # the view we came from.
   _brewf_is_pinned "$1" && brew pin "$1" &>/dev/null
   return 0
 }
 
 _brewf_rollback() {          # $1=pkg
   local pkg=$1 dir old new
-  # _fc_fzf_read 靠动态作用域读 _FC_HEADER，所以能 local 覆盖而不影响外层。
+  # _fc_fzf_read reads _FC_HEADER through dynamic scoping, so a local here
+  # overrides it without touching the outer one.
   local _FC_HEADER="Rollback $pkg"
   dir=$(_brewf_brewdir "$pkg")
   if [[ -z $dir ]]; then
@@ -121,26 +129,33 @@ _brewf_rollback() {          # $1=pkg
   fi
   old=$(_brewf_version_current "$pkg")
   _fc_msg "${old:-Not-installed}" "$pkg"
-  # git log 默认按时间倒序，--tiebreak=index 保证 fzf 不打乱它。
+  # git log is newest-first by default; --tiebreak=index keeps fzf from
+  # reordering it.
   new=$(print -l -- ${(f)"$(_brewf_version_list "$pkg")"} \
     | _fc_fzf_read --tiebreak=index --query="$pkg")
   if [[ -z $new ]]; then
     _fc_msg "Rollback cancel." "$pkg" && return 0
     return 0
   fi
-  # _fc_fzf_read 原样返回整行，所以 hash 要在这里自己取。
+  # _fc_fzf_read returns the whole line verbatim, so we have to take the hash
+  # ourselves.
   _brewf_checkout "$pkg" "${new%% *}" "$old"
 }
 
-# ---- 动作适配器 ----
+# ---- Action adapters ----
 
 _brewf_info() { _brewf info "$1" | _fc_pager }
 _brewf_uses() { _brewf uses --installed "$1" }
 _brewf_deps() { _brewf deps "$1" --tree }
-_brewf_edit() { $EDITOR "$(_brewf formula "$1")" }
+# ${VISUAL:-${EDITOR:-vi}}: a bare $EDITOR under `setopt nounset` errors with
+# parameter not set when it is unset, and nounset is a global option the user
+# turned on themselves, so the whole action should not die over it.
+# VISUAL wins by convention (the vi / emacs family uses it to override the line
+# editing mode of EDITOR).
+_brewf_edit() { ${VISUAL:-${EDITOR:-vi}} "$(_brewf formula "$1")" }
 
-# 其余动作（homepage / options / cat / link / unlink / pin / install /
-# tap-info）都落到 `*)` 原样透传。
+# The remaining actions (homepage / options / cat / link / unlink / pin /
+# install / tap-info) all fall through to `*)` and are passed through verbatim.
 _brewf_act() {
   case $1 in
     upgrade) _brewf upgrade --yes "$2" ;;
@@ -152,10 +167,11 @@ _brewf_act() {
   esac
 }
 
-# ---- 注册表 ----
+# ---- Registry ----
 
 _FC_REG+=(
   'brew:title'  'Brew'
+  'brew:requires' 'brew'
   'brew:views'  'outdated search manage pinned tap'
   'brew:fallback' '_brewf_act'
 
@@ -167,10 +183,12 @@ _FC_REG+=(
 
   'brew:search'         '_brewf_list_available'
   'brew:search:title'   'Brew Search'
-  # search 列的是**还没装**的 formula/cask，所以 uninstall（对没装的包卸载）和
-  # unpin（没装的东西无从 pin）都不能在这里 —— manage 与 pinned 视图里两个都有。
-  # 于是本视图没有 mutating 动作，走流式路径（base.zsh 的
-  # _fc_view_streamable），每次回列表重跑一次 brew formulae。
+  # search lists the formulae/casks that are **not** installed yet, so uninstall
+  # (uninstalling a package you do not have) and unpin (there is nothing
+  # installed to pin) belong in neither — both are in the manage and pinned
+  # views. That leaves this view with no mutating action, so it takes the
+  # streaming path (_fc_view_streamable in base.zsh), re-running brew formulae
+  # on every return to the list.
   'brew:search:actions' 'install rollback options homepage info deps uses edit cat link unlink pin'
   'brew:search:cols'    'name'
 
@@ -189,10 +207,12 @@ _FC_REG+=(
   'brew:tap:actions'    'untap tap-info'
   'brew:tap:cols'       'name'
 
-  # 移出列表的动作。rollback 不删行但会回到列表，所以不在这里。
+  # Actions that drop the row out of the list. rollback deletes no row but does
+  # return to the list, so it is not here.
   'brew:mutating' 'upgrade uninstall untap unpin'
 
-  # 留在动作菜单里的动作。unlink 会改 brew 状态却仍留在这里，先保持现状。
+  # Actions that stay in the action menu. unlink does change brew state and
+  # still stays here; keeping the status quo for now.
   'brew:stay' 'install options homepage info deps uses edit cat link unlink pin'
 
   'brew:rollback' '_brewf_rollback'

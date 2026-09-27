@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
-# 库文件，由 fzf-collection.plugin.zsh source 加载；无顶层入口，模式 100644。
+# Library file, sourced by fzf-collection.plugin.zsh. No top-level entry point;
+# mode 100644.
 
 # https://docs.npmjs.com/cli/v8/using-npm/config#shorthands-and-other-cli-niceties
 
@@ -7,7 +8,7 @@ _npmf() {
   npm "$1" --quiet --no-fund --no-audit --global "${@:2}"
 }
 
-# ---- 列表查询：输出 name<TAB>rest，由 _fc_render 上色 ----
+# ---- List queries: emit name<TAB>rest, coloured by _fc_render ----
 
 _npmf_list_outdated() {
   _npmf outdated --json \
@@ -23,14 +24,14 @@ _npmf_list_available() {
   all-the-package-names
 }
 
-# ---- 版本相关：全部显式收参 ----
+# ---- Versions: every argument taken explicitly ----
 
 _npmf_version_list() {
   npm info "$1" versions --json 2>/dev/null | jq -r 'reverse | .[]' 2>/dev/null
 }
 
-# `npm list --depth 0` 每行是 `pkg@version`；整行含 `pkg@` 才命中，所以别的包
-# 的行不会被误取。
+# Each line of `npm list --depth 0` is `pkg@version`; only a line containing
+# `pkg@` matches, so lines of other packages are never picked up by mistake.
 _npmf_version_current() {
   local line
   _npmf list --depth 0 2>/dev/null | while IFS= read -r line; do
@@ -45,9 +46,9 @@ _npmf_version_install() {
   _npmf install "$1@$2" 2>/dev/null
 }
 
-# ---- 动作适配器 ----
+# ---- Action adapters ----
 
-_npmf_act() {              # 原生透传；update 之前先打一行提示
+_npmf_act() {              # Pass through natively; print a notice before update
   [[ $1 == update ]] && print -r -- "upgrade $2"
   _npmf "$1" "$2"
 }
@@ -57,10 +58,11 @@ _npmf_deps() { npm view "$1" dependencies }
 _npmf_homepage() { _fc_homepage "$(npm view "$1" homepage)" }
 _npmf_rollback() { _fc_rollback npm "$1" }
 
-# ---- 注册表 ----
+# ---- Registry ----
 
 _FC_REG+=(
   'npm:title'          'Npm'
+  'npm:requires'       'npm all-the-package-names'
   'npm:views'          'outdated search manage'
   'npm:fallback'         '_npmf_act'
 
@@ -95,10 +97,5 @@ _FC_REG+=(
 )
 
 npmf() {
-  # REQUIRE npm install -g all-the-package-names
-  if ! _fc_have_cmd all-the-package-names; then
-    print -r -- 'Error! please run "npm i -g all-the-package-names" first!'
-    return 0
-  fi
   _fc_cmd npm
 }

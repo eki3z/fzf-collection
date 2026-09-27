@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
-# 唯一入口，由 oh-my-zsh（或手动 source）加载。${0:h:A} 定位本文件并 source
-# 下面的 body，body 全是 zsh 代码。
+# The only entry point, loaded by oh-my-zsh (or by sourcing it by hand).
+# ${0:h:A} locates this file and sources the body below; the body is all zsh
+# code.
 
 # set options if not defined
 if [[ -z ${FZF_COLLECTION_OPTS:-} ]]; then
@@ -33,13 +34,15 @@ fi
 
 source "${0:h:A}/base.zsh"
 
-# ---- 颜色开关 ----
+# ---- Colour switch ----
 #
-# 加载时算一次。不能在显示层判：显示层的 stdout 是通向 fzf 的管道，那里的
-# [[ -t 1 ]] 恒为 false，会把颜色全关掉。
+# Computed once at load time. It cannot be tested in the display layer: that
+# layer's stdout is a pipe into fzf, where [[ -t 1 ]] is always false, which
+# would switch colour off entirely.
 #
-# 优先级：FZF_COLLECTION_COLOR=0|1 > NO_COLOR 非空 > TERM 为空或 dumb > [[ -t 1 ]]。
-# 关闭时 _fc_sgr_prefix 不输出任何东西，行内容与开启时逐字节相同，只是没有转义。
+# Precedence: FZF_COLLECTION_COLOR=0|1 > a non-empty NO_COLOR > an empty or dumb
+# TERM > [[ -t 1 ]]. When it is off _fc_sgr_prefix emits nothing at all, the row
+# content is byte-for-byte the same as when it is on, just without the escapes.
 typeset -gi _FC_COLOR=1
 if [[ -z ${FZF_COLLECTION_COLOR:-} ]]; then
   if [[ -n ${NO_COLOR:-} ]] || [[ ${TERM:-dumb} == dumb ]] || [[ ! -t 1 ]]; then

@@ -339,6 +339,7 @@ Per ecosystem:
 | --- | --- |
 | `title` | the name shown in the view menu |
 | `views` | the views, space separated |
+| `requires` | commands that must exist before a view opens |
 | `stay` | actions that leave you in the action menu after they run |
 | `mutating` | actions that change state, so a failure stops the batch |
 | `fallback` | function receiving `(action, package)` for actions with no handler |
@@ -370,6 +371,32 @@ which is why the version fields are `list-versions`, `current-version` and
 `install-version` and not `versions` / `current` / `install`. `t_case_registry`
 asserts both.
 
+### requires
+
+`requires` is checked before the view menu opens, and a missing command is named
+rather than left to fail later:
+
+```
+$ gemf
+fzf-collection: missing gem.
+  Install gem and try again.
+```
+
+The value is space separated, and an item may offer alternatives with `|`, of
+which one has to exist — that is how `pipf` declares `pip3|pip`.
+
+`fzf` itself is **not** in the list. Every command needs it, and repeating it in
+seven ecosystems would be seven places to forget, so `_fc_require` checks it
+alongside whatever the ecosystem declares. `pathf` and `envf` are not
+ecosystems and have no registry key; they call `_fc_need` directly, `fzf`
+included.
+
+The check does not change any exit code. Every `*-f` command already returns 0
+on every path — a cancelled session included — so there is nothing for a
+non-zero code to disagree with, and picking 1 for "missing dependency" alone
+would only make "you pressed Ctrl-C" and "this never started" tell apart. Run
+`gemf` and read the message instead.
+
 ## Adding a package manager
 
 A collection is one file under `collections/`, named `fzf-<name>.zsh`, and it
@@ -378,7 +405,8 @@ does not have to declare anything the driver already declared.
 
 1. **A `<eco>f` function** that calls `_fc_cmd <eco>`, and the name added to
    `FZF_COLLECTION_MODULES` in the plugin entry file.
-2. **The registry block**, with `title` and `views` at minimum.
+2. **The registry block**, with `title`, `views` and
+   [`requires`](#requires) at minimum.
 3. **One list function per view**, printing `name<TAB>...` rows.
 4. **`_FC_REG[<eco>:fallback]`**, unless every action has a handler.
 5. **The version trio** (`list-versions`, `current-version`, `install-version`)
@@ -398,8 +426,10 @@ Then:
 ## Development
 
 ```sh
-tests/run.sh             # behaviour diff against tests/expected/baseline.txt
+tests/run.sh             # all gates, plus the behaviour diff against the baseline
+tests/run.sh --syntax    # zsh -n
 tests/run.sh --hygiene   # variable-hygiene lint
+tests/run.sh --nounset   # the same cases under `setopt nounset`
 tests/run.sh --record    # re-record the baseline after an intended change
 ```
 
@@ -412,6 +442,14 @@ stdout, which almost every function here captures:
   never fires
 
 `zsh -n` checks none of these.
+
+`--nounset` exists for the one class of bug that is syntactically correct,
+hygiene-clean, and still fails silently at run time: a reference to a parameter
+that may not be set. `_fc_session` used to pass an undeclared `$opt` to
+`_fc_feed`, so on a shell with `setopt nounset` every `*-f` command quit after
+its first selection while the other three gates stayed green. Read the gate's
+result rather than the exit code — under `nounset` zsh reports the problem on
+stderr and still returns 0.
 
 ## Todo
 
